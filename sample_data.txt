@@ -1,0 +1,47 @@
+7/27 Benny Daniel 19:00-22:30 處理 GDL L10 + L11 Pre dry run Eden 早上未刷卡，申請出勤確認
+
+7/28 19:00-2200 Benny Daniel 19:00-22:30 處理 GDL L11 Test YiWen 生理假一天 Xavier 黑假一天
+
+7/29 19:00-20:00 Benny Daniel 19:00-22:30 處理 GDL L11 Test Eden 早上未刷卡，申請出勤確認
+
+0731 Eden 特休一天 Winnie 事假一天，處理搬家事宜
+
+7/20 Benny 0720 19:00 - 23:00 整理 GDL SFC 與 MTF init Winnie 病假一天 Cora 忘了帶卡，待補出勤確認
+
+0721 Benny 19:00 - 21:00 確認 L10 testing issue Cora要請黑假一天 要去銀行處理問題
+
+7/22 Benny 1900 -2000 整理 L10 Testing Status
+
+7/23 Eden 黑假半天，ＷＦＨ
+
+7/24 Winnie 病假一天 Eden 黑假半天，ＷＦＨ Benny 19:00-22:00 處理RMC issue
+
+0720 Cora 忘了帶卡，待補出勤確認 Winnie 病假一天
+
+0721 Cora要請黑假一天 要去銀行處理問題
+
+0723 Eden WFH
+
+0724 Eden WFH
+
+0713 1900-2000 Kevin, Cora, Xavier 幫忙Farglory 處理 DVT 機台狀況
+
+0714 1900-2000 Xavier Farglory 整理 DVT 機台狀況並協助 Benson 處理 HPRv3 for SV 2000-2200 Benson 至鶯歌實驗室處理HPRv3 SV testing
+
+0715 1900-2000 Xavier Farglory 整理 DVT 機台狀況並協助 Benson 處理 HPRv3 for SV Benny Farglory 整理 DVT 機台狀況 2000-2200 Benson 至鶯歌實驗室處理HPRv3 SV testing
+
+0716 1900-2000 Xavier Farglory 整理 DVT 機台狀況並協助 Benson 處理 HPRv3 for SV 1200-1830 Benson 黑假半天回醫院回診
+
+0717 Kevin 病假一天 Cora 生理假一天
+
+0706 Cora 1900-2000 Xavier 1900-2000 處理VR200 at Farglory
+
+0707 Xavier 1900-2000 Cora 1900-2000 Benny 1900-2000, 處理VR200 at Farglory Benny 21:00-0130 幫忙Rell 處理HOU RMA
+
+Eden 2330-0230 幫忙SV處理HPR test
+
+0708 Xavier 1900-2000 Benny 1900-2000 處理VR200 FDT Issue Benson 黑假至醫院開刀 Cora 申請出勤確認
+
+0709 Xavier 1900-2000 Benny 1900-2000 Fine-tune FDT with Luc Cora 2130-2330 處理HOU RMA
+
+0707 Daniel 公出一天處理HOU出差 Kevin 黑假半天拿護照
