@@ -15,17 +15,105 @@ database.init_db()
 def index():
     return render_template('index.html')
 
+@app.route('/api/members', methods=['GET'])
+def get_members():
+    members = database.get_all_members()
+    return jsonify(members)
+
+@app.route('/api/members', methods=['POST'])
+def add_member():
+    data = request.json or {}
+    name = data.get('name', '')
+    if not name.strip():
+        return jsonify({"status": "error", "message": "姓名不能為空"}), 400
+    rec_id = database.add_member(name)
+    return jsonify({"status": "success", "id": rec_id})
+
+@app.route('/api/members/<int:member_id>', methods=['DELETE'])
+def delete_member(member_id):
+    database.delete_member(member_id)
+    return jsonify({"status": "success"})
+
 @app.route('/api/parse', methods=['POST'])
 def parse_logs():
     data = request.json or {}
     text_block = data.get('text', '')
     default_year = int(data.get('year', 2025))
     
-    ot_records, lv_records = parser.parse_raw_text(text_block, default_year)
+    ot_records, lv_records, warn_records = parser.parse_raw_text(text_block, default_year)
     return jsonify({
         "status": "success",
         "overtime_records": ot_records,
-        "leave_records": lv_records
+        "leave_records": lv_records,
+        "warning_records": warn_records
+    })
+
+@app.route('/api/parse_csv', methods=['POST'])
+def parse_csv():
+    if 'file' not in request.files:
+        return jsonify({"status": "error", "message": "請上傳 CSV 檔案"}), 400
+        
+    file = request.files['file']
+    default_year = int(request.form.get('year', 2025))
+    
+    try:
+        content = file.read().decode('utf-8-sig', errors='ignore')
+    except Exception as e:
+        return jsonify({"status": "error", "message": f"檔案讀取失敗: {str(e)}"}), 400
+        
+    ot_records, lv_records, warn_records = parser.parse_raw_text(content, default_year)
+    return jsonify({
+        "status": "success",
+        "overtime_records": ot_records,
+        "leave_records": lv_records,
+        "warning_records": warn_records
+    })
+
+@app.route('/api/parse_image', methods=['POST'])
+def parse_image():
+    if 'file' not in request.files:
+        return jsonify({"status": "error", "message": "請上傳圖片檔案"}), 400
+        
+    file = request.files['file']
+    default_year = int(request.form.get('year', 2025))
+    
+    # Save temporary file
+    temp_path = os.path.join('/tmp', f'upload_{file.filename}')
+    file.save(temp_path)
+    
+    extracted_text = ""
+    # Try native macOS Vision OCR first if available
+    if os.path.exists('./mac_ocr'):
+        try:
+            res = subprocess.run(['./mac_ocr', temp_path], capture_output=True, text=True, timeout=15)
+            if res.returncode == 0 and res.stdout.strip():
+                extracted_text = res.stdout.strip()
+        except Exception:
+            pass
+
+    # Fallback to pytesseract if needed
+    if not extracted_text:
+        try:
+            import pytesseract
+            from PIL import Image
+            img = Image.open(temp_path)
+            extracted_text = pytesseract.image_to_string(img, lang='chi_tra+eng')
+        except Exception as e:
+            if not extracted_text:
+                if os.path.exists(temp_path):
+                    os.remove(temp_path)
+                return jsonify({"status": "error", "message": "圖片辨識 (OCR) 引擎未就緒，建議使用文字或 CSV 貼上匯入"}), 500
+                
+    if os.path.exists(temp_path):
+        os.remove(temp_path)
+        
+    ot_records, lv_records, warn_records = parser.parse_raw_text(extracted_text, default_year)
+    return jsonify({
+        "status": "success",
+        "extracted_text": extracted_text,
+        "overtime_records": ot_records,
+        "leave_records": lv_records,
+        "warning_records": warn_records
     })
 
 @app.route('/api/confirm_import', methods=['POST'])
@@ -34,15 +122,23 @@ def confirm_import():
     ot_list = data.get('overtime_records', [])
     lv_list = data.get('leave_records', [])
     
-    database.bulk_insert(ot_list, lv_list)
-    return jsonify({"status": "success", "message": f"成功匯入 {len(ot_list)} 筆加班與 {len(lv_list)} 筆請假紀錄"})
+    ins_ot, ins_lv = database.bulk_insert(ot_list, lv_list)
+    skipped_ot = len(ot_list) - ins_ot
+    skipped_lv = len(lv_list) - ins_lv
+    
+    msg_parts = [f"成功新增 {ins_ot} 筆加班與 {ins_lv} 筆請假"]
+    if skipped_ot > 0 or skipped_lv > 0:
+        msg_parts.append(f"(自動去重忽略 {skipped_ot + skipped_lv} 筆已存在的重複紀錄)")
+        
+    return jsonify({"status": "success", "message": " ".join(msg_parts)})
 
 @app.route('/api/overtime', methods=['GET'])
 def get_overtime():
     month = request.args.get('month')
     name = request.args.get('name')
+    ot_type = request.args.get('ot_type')
     search = request.args.get('search')
-    records = database.get_overtime_records(month=month, name=name, search=search)
+    records = database.get_overtime_records(month=month, name=name, search=search, ot_type=ot_type)
     return jsonify(records)
 
 @app.route('/api/overtime', methods=['POST'])
@@ -146,5 +242,5 @@ def export_csv():
 
 if __name__ == '__main__':
     print("Starting Overwork Table Server...")
-    print("Please open browser at: http://127.0.0.1:5000")
-    app.run(host='0.0.0.0', port=5000, debug=True)
+    print("Please open browser at: http://127.0.0.1:8000")
+    app.run(host='0.0.0.0', port=8000, debug=True)

@@ -1,0 +1,1406 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>團隊加班與請假管理系統</title>
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Noto+Sans+TC:wght@300;400;500;700&display=swap" rel="stylesheet">
+    <!-- Font Awesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <style>
+        :root {
+            --primary: #4f46e5;
+            --primary-hover: #4338ca;
+            --primary-light: #eeeffe;
+            --secondary: #06b6d4;
+            --bg-dark: #0f172a;
+            --card-bg: #1e293b;
+            --card-border: #334155;
+            --text-main: #f8fafc;
+            --text-muted: #94a3b8;
+            --success: #10b981;
+            --warning: #f59e0b;
+            --danger: #ef4444;
+            --accent: #8b5cf6;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Inter', 'Noto Sans TC', -apple-system, BlinkMacSystemFont, sans-serif;
+            background-color: var(--bg-dark);
+            color: var(--text-main);
+            line-height: 1.6;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* Header */
+        header {
+            background: linear-gradient(135deg, rgba(30, 41, 59, 0.8), rgba(15, 23, 42, 0.9));
+            backdrop-filter: blur(12px);
+            border-bottom: 1px solid var(--card-border);
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            padding: 1rem 2rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .brand {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            font-size: 1.35rem;
+            font-weight: 700;
+            background: linear-gradient(135deg, #818cf8, #c084fc);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .brand i {
+            font-size: 1.5rem;
+            color: #818cf8;
+            -webkit-text-fill-color: initial;
+        }
+
+        .header-controls {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }
+
+        .month-select-wrapper {
+            position: relative;
+        }
+
+        select, input[type="text"], input[type="date"], input[type="number"], textarea {
+            background-color: #0f172a;
+            border: 1px solid var(--card-border);
+            color: var(--text-main);
+            padding: 0.5rem 1rem;
+            border-radius: 0.5rem;
+            font-size: 0.9rem;
+            outline: none;
+            transition: all 0.2s ease;
+        }
+
+        select:focus, input:focus, textarea:focus {
+            border-color: var(--primary);
+            box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.2);
+        }
+
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.53rem 1.1rem;
+            border-radius: 0.5rem;
+            font-size: 0.9rem;
+            font-weight: 500;
+            cursor: pointer;
+            border: none;
+            transition: all 0.2s ease;
+            text-decoration: none;
+        }
+
+        .btn-primary {
+            background-color: var(--primary);
+            color: #fff;
+        }
+        .btn-primary:hover {
+            background-color: var(--primary-hover);
+            transform: translateY(-1px);
+        }
+
+        .btn-secondary {
+            background-color: #334155;
+            color: var(--text-main);
+        }
+        .btn-secondary:hover {
+            background-color: #475569;
+        }
+
+        .btn-success {
+            background-color: var(--success);
+            color: #fff;
+        }
+        .btn-success:hover {
+            opacity: 0.9;
+        }
+
+        .btn-danger {
+            background-color: var(--danger);
+            color: #fff;
+        }
+        .btn-danger:hover {
+            opacity: 0.9;
+        }
+
+        /* Layout Container */
+        .app-container {
+            max-width: 1400px;
+            width: 100%;
+            margin: 0 auto;
+            padding: 1.5rem 2rem;
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            gap: 1.5rem;
+        }
+
+        /* Navigation Tabs */
+        .tabs {
+            display: flex;
+            gap: 0.5rem;
+            border-bottom: 1px solid var(--card-border);
+            padding-bottom: 0.5rem;
+        }
+
+        .tab-btn {
+            padding: 0.6rem 1.25rem;
+            border-radius: 0.5rem;
+            background: transparent;
+            color: var(--text-muted);
+            border: none;
+            font-weight: 500;
+            font-size: 0.95rem;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            transition: all 0.2s ease;
+        }
+
+        .tab-btn:hover {
+            color: var(--text-main);
+            background-color: rgba(255, 255, 255, 0.05);
+        }
+
+        .tab-btn.active {
+            color: #fff;
+            background-color: var(--primary);
+            box-shadow: 0 4px 12px rgba(79, 70, 229, 0.3);
+        }
+
+        /* Stats Cards Dashboard */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+            gap: 1.25rem;
+        }
+
+        .stat-card {
+            background: var(--card-bg);
+            border: 1px solid var(--card-border);
+            border-radius: 0.75rem;
+            padding: 1.25rem;
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+        }
+
+        .stat-icon {
+            width: 48px;
+            height: 48px;
+            border-radius: 0.75rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.4rem;
+        }
+
+        .icon-ot { background: rgba(79, 70, 229, 0.15); color: #818cf8; }
+        .icon-lv { background: rgba(6, 182, 212, 0.15); color: #38bdf8; }
+        .icon-users { background: rgba(139, 92, 246, 0.15); color: #c084fc; }
+
+        .stat-info h4 {
+            font-size: 0.85rem;
+            color: var(--text-muted);
+            font-weight: 500;
+        }
+
+        .stat-info .stat-value {
+            font-size: 1.5rem;
+            font-weight: 700;
+            margin-top: 0.2rem;
+        }
+
+        /* Card Container */
+        .content-card {
+            background: var(--card-bg);
+            border: 1px solid var(--card-border);
+            border-radius: 0.75rem;
+            padding: 1.5rem;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+        }
+
+        .card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 1rem;
+        }
+
+        .card-title {
+            font-size: 1.1rem;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .filter-bar {
+            display: flex;
+            gap: 0.75rem;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+
+        /* Table Styling */
+        .table-responsive {
+            overflow-x: auto;
+            border-radius: 0.5rem;
+            border: 1px solid var(--card-border);
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            text-align: left;
+            font-size: 0.9rem;
+        }
+
+        th {
+            background-color: #0f172a;
+            color: var(--text-muted);
+            font-weight: 600;
+            padding: 0.75rem 1rem;
+            border-bottom: 1px solid var(--card-border);
+
+        }
+
+        td {
+            padding: 0.75rem 1rem;
+            border-bottom: 1px solid var(--card-border);
+            color: var(--text-main);
+        }
+
+        tr:last-child td {
+            border-bottom: none;
+        }
+
+        tr:hover td {
+            background-color: rgba(255, 255, 255, 0.02);
+        }
+
+        /* Badges */
+        .badge {
+            padding: 0.25rem 0.6rem;
+            border-radius: 2rem;
+            font-size: 0.78rem;
+            font-weight: 600;
+            display: inline-block;
+        }
+
+        .badge-ot { background: rgba(79, 70, 229, 0.2); color: #a5b4fc; border: 1px solid rgba(79, 70, 229, 0.4); }
+        .badge-leave { background: rgba(6, 182, 212, 0.2); color: #67e8f9; border: 1px solid rgba(6, 182, 212, 0.4); }
+
+        /* Form Controls */
+        .form-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1rem;
+        }
+
+        .form-group {
+            display: flex;
+            flex-direction: column;
+            gap: 0.4rem;
+        }
+
+        .form-group label {
+            font-size: 0.85rem;
+            color: var(--text-muted);
+            font-weight: 500;
+        }
+
+        /* Modal / Import Section */
+        .import-area {
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+        }
+
+        textarea.import-input {
+            width: 100%;
+            height: 180px;
+            font-family: monospace;
+            font-size: 0.85rem;
+            line-height: 1.4;
+            resize: vertical;
+        }
+
+        .tab-content {
+            display: none;
+        }
+
+        .tab-content.active {
+            display: flex;
+            flex-direction: column;
+            gap: 1.5rem;
+        }
+
+        /* Action Buttons in Table */
+        .action-btn {
+            background: none;
+            border: none;
+            color: var(--text-muted);
+            cursor: pointer;
+            padding: 0.3rem 0.5rem;
+            border-radius: 0.25rem;
+            transition: all 0.2s ease;
+        }
+
+        .action-btn:hover {
+            color: var(--text-main);
+            background-color: #334155;
+        }
+
+        .action-btn.delete:hover {
+            color: var(--danger);
+            background-color: rgba(239, 68, 68, 0.15);
+        }
+
+        /* Toast notification */
+        #toast {
+            position: fixed;
+            bottom: 2rem;
+            right: 2rem;
+            background: #1e293b;
+            border: 1px solid var(--card-border);
+            border-left: 4px solid var(--primary);
+            color: white;
+            padding: 0.75rem 1.25rem;
+            border-radius: 0.5rem;
+            box-shadow: 0 10px 15px -3px rgba(0,0,0,0.5);
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            transform: translateY(150%);
+            transition: transform 0.3s ease;
+            z-index: 1000;
+        }
+
+        #toast.show {
+            transform: translateY(0);
+        }
+
+        /* Modal Popup */
+        .modal-backdrop {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            background: rgba(15, 23, 42, 0.75);
+            backdrop-filter: blur(4px);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 2000;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.25s ease;
+        }
+
+        .modal-backdrop.show {
+            opacity: 1;
+            pointer-events: auto;
+        }
+
+        .modal-card {
+            background: var(--card-bg);
+            border: 1px solid var(--card-border);
+            border-radius: 0.75rem;
+            width: 90%;
+            max-width: 500px;
+            padding: 1.5rem;
+            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.5);
+            display: flex;
+            flex-direction: column;
+            gap: 1.25rem;
+        }
+
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid var(--card-border);
+            padding-bottom: 0.75rem;
+        }
+
+        .modal-title {
+            font-size: 1.1rem;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+    </style>
+</head>
+<body>
+
+    <header>
+        <div class="brand">
+            <i class="fa-solid fa-business-time"></i>
+            <span>團隊加班與請假管理系統</span>
+        </div>
+        <div class="header-controls">
+            <div class="month-select-wrapper">
+                <select id="monthSelect" onchange="loadData()">
+                    <!-- Options populated via JS -->
+                </select>
+            </div>
+            <button class="btn btn-secondary" onclick="exportCSV()">
+                <i class="fa-solid fa-file-csv"></i> 匯出 CSV
+            </button>
+        </div>
+    </header>
+
+    <div class="app-container">
+
+        <!-- Navigation Tabs -->
+        <div class="tabs">
+            <button class="tab-btn active" onclick="switchTab('dashboard')">
+                <i class="fa-solid fa-chart-pie"></i> 總覽 Dashboard
+            </button>
+            <button class="tab-btn" onclick="switchTab('overtime')">
+                <i class="fa-solid fa-clock"></i> 加班紀錄
+            </button>
+            <button class="tab-btn" onclick="switchTab('leaves')">
+                <i class="fa-solid fa-calendar-xmark"></i> 請假紀錄
+            </button>
+            <button class="tab-btn" onclick="switchTab('import')">
+                <i class="fa-solid fa-file-import"></i> 批次匯入 / 文字解析
+            </button>
+            <button class="tab-btn" onclick="switchTab('members')">
+                <i class="fa-solid fa-users-gear"></i> 成員管理
+            </button>
+        </div>
+
+        <!-- Dashboard Tab -->
+        <div id="tab-dashboard" class="tab-content active">
+            <!-- Stats -->
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <div class="stat-icon icon-ot"><i class="fa-solid fa-user-clock"></i></div>
+                    <div class="stat-info">
+                        <h4>本月加班總時數</h4>
+                        <div class="stat-value" id="stat-total-ot">0.0 小時</div>
+                    </div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-icon icon-lv"><i class="fa-solid fa-plane-departure"></i></div>
+                    <div class="stat-info">
+                        <h4>本月請假總筆數</h4>
+                        <div class="stat-value" id="stat-total-leave">0 筆</div>
+                    </div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-icon icon-users"><i class="fa-solid fa-users"></i></div>
+                    <div class="stat-info">
+                        <h4>參與成員數</h4>
+                        <div class="stat-value" id="stat-member-count">0 人</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Member Summary Table -->
+            <div class="content-card">
+                <div class="card-header">
+                    <div class="card-title">
+                        <i class="fa-solid fa-table-list" style="color: var(--accent);"></i> 成員月度統計摘要
+                    </div>
+                </div>
+                <div class="table-responsive">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>成員姓名</th>
+                                <th>加班總數 (筆)</th>
+                                <th>加班總時數 (hr)</th>
+                                <th>請假總數 (筆)</th>
+                                <th>Google 補休 (天)</th>
+                            </tr>
+                        </thead>
+                        <tbody id="summaryTableBody">
+                            <!-- Populated dynamically -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- Overtime Tab -->
+        <div id="tab-overtime" class="tab-content">
+            <div class="content-card">
+                <div class="card-header">
+                    <div class="card-title">
+                        <i class="fa-solid fa-clock" style="color: #818cf8;"></i> 加班紀錄清單
+                    </div>
+                    <div class="filter-bar">
+                        <select id="otTypeFilter" onchange="loadOvertime()" style="width: 130px;">
+                            <option value="">全部類型</option>
+                            <option value="平日加班">平日加班</option>
+                            <option value="假日加班">假日加班</option>
+                        </select>
+                        <input type="text" id="otSearch" placeholder="搜尋人員/原因/類型..." oninput="loadOvertime()">
+                        <button class="btn btn-primary" onclick="showAddOtModal()">
+                            <i class="fa-solid fa-plus"></i> 新增加班紀錄
+                        </button>
+                    </div>
+                </div>
+                <div class="table-responsive">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>日期</th>
+                                <th>加班類型</th>
+                                <th>姓名</th>
+                                <th>時間區間</th>
+                                <th>加班時數</th>
+                                <th>事由</th>
+                                <th>操作</th>
+                            </tr>
+                        </thead>
+                        <tbody id="overtimeTableBody">
+                            <!-- Populated dynamically -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- Leaves Tab -->
+        <div id="tab-leaves" class="tab-content">
+            <div class="content-card">
+                <div class="card-header">
+                    <div class="card-title">
+                        <i class="fa-solid fa-calendar-xmark" style="color: #38bdf8;"></i> 請假紀錄清單
+                    </div>
+                    <div class="filter-bar">
+                        <select id="leaveTypeFilter" onchange="loadLeaves()" style="width: 130px;">
+                            <option value="">全部假別</option>
+                            <option value="黑假">黑假</option>
+                            <option value="WFH">WFH</option>
+                            <option value="病假">病假</option>
+                            <option value="事假">事假</option>
+                            <option value="特休">特休</option>
+                            <option value="生理假">生理假</option>
+                            <option value="出勤確認">出勤確認</option>
+                            <option value="因公外出">因公外出</option>
+                        </select>
+                        <input type="text" id="leaveSearch" placeholder="搜尋人員/原因/假別..." oninput="loadLeaves()">
+                    </div>
+                </div>
+                <div class="table-responsive">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>日期</th>
+                                <th>姓名</th>
+                                <th>假別</th>
+                                <th>時長</th>
+                                <th>Google 補休(天)</th>
+                                <th>事由</th>
+                                <th>操作</th>
+                            </tr>
+                        </thead>
+                        <tbody id="leavesTableBody">
+                            <!-- Populated dynamically -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- Import / Parse Tab -->
+        <div id="tab-import" class="tab-content">
+            <div class="content-card">
+                <div class="card-header" style="flex-wrap: wrap; gap: 1rem;">
+                    <div class="card-title">
+                        <i class="fa-solid fa-wand-magic-sparkles" style="color: var(--accent);"></i> 批次資料匯入與解析
+                    </div>
+                    <!-- Mode Switch Buttons -->
+                    <div style="display: flex; gap: 0.5rem;">
+                        <button class="btn btn-primary" id="btnModeText" onclick="switchImportMode('text')">
+                            <i class="fa-solid fa-align-left"></i> 文字貼上
+                        </button>
+                        <button class="btn btn-secondary" id="btnModeCsv" onclick="switchImportMode('csv')">
+                            <i class="fa-solid fa-file-csv"></i> CSV 檔案上傳
+                        </button>
+                        <button class="btn btn-secondary" id="btnModeImage" onclick="switchImportMode('image')">
+                            <i class="fa-solid fa-image"></i> 圖片 OCR 識別
+                        </button>
+                    </div>
+                </div>
+                
+                <div class="import-area">
+                    <div style="background: rgba(79, 70, 229, 0.1); border: 1px solid rgba(79, 70, 229, 0.3); border-radius: 0.5rem; padding: 0.75rem 1rem; font-size: 0.85rem; color: #a5b4fc;">
+                        <strong>💡 標準紀錄撰寫規範提示：</strong>
+                        <ul style="margin-left: 1.2rem; margin-top: 0.3rem; line-height: 1.5;">
+                            <li><b>日期開頭</b>：如 <code>7/27</code> 或 <code>0727</code>。</li>
+                            <li><b>加班格式</b>：<code>姓名 時間區間(如 19:00-22:30) 事由</code>（時間也可置於人名之前）。</li>
+                            <li><b>請假格式</b>：<code>姓名 假別 (如 黑假/WFH/病假/事假/特休/生理假/出勤確認) 時長 (如 一天/半天)</code>。</li>
+                            <li>未帶時間且無假別關鍵字之描述行，將會列入下方<b>「寫法或格式有疑慮之行數」</b>警告區塊供重新檢查調整。</li>
+                        </ul>
+                    </div>
+
+                    <!-- Mode 1: Text Paste -->
+                    <div id="importModeText">
+                        <textarea class="import-input" id="rawParseInput" placeholder="請在此貼上文字紀錄..."></textarea>
+                        <div style="display: flex; gap: 1rem; align-items: center; margin-top: 0.75rem;">
+                            <label style="font-size: 0.88rem;">預設年份: </label>
+                            <input type="number" id="parseYear" value="2025" style="width: 100px;">
+                            <button class="btn btn-primary" onclick="parseText()">
+                                <i class="fa-solid fa-magnifying-glass-chart"></i> 開始解析文字
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Mode 2: CSV File Upload -->
+                    <div id="importModeCsv" style="display: none; padding: 1.5rem; border: 2px dashed rgba(255, 255, 255, 0.2); border-radius: 0.75rem; text-align: center;">
+                        <i class="fa-solid fa-file-csv" style="font-size: 2.5rem; color: var(--accent); margin-bottom: 1rem;"></i>
+                        <h4 style="margin-bottom: 0.5rem;">選擇或拖曳 CSV 檔案</h4>
+                        <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 1rem;">支援格式：帶有打卡日誌內容的 .csv 檔</p>
+                        <input type="file" id="csvFileInput" accept=".csv" style="display: none;" onchange="updateCsvFileName()">
+                        <div style="display: flex; justify-content: center; gap: 1rem; align-items: center;">
+                            <button class="btn btn-secondary" onclick="document.getElementById('csvFileInput').click()">
+                                <i class="fa-solid fa-folder-open"></i> 瀏覽 CSV 檔案
+                            </button>
+                            <span id="csvFileNameDisplay" style="font-size: 0.88rem; color: #a5b4fc;">未選擇檔案</span>
+                        </div>
+                        <div style="display: flex; gap: 1rem; align-items: center; justify-content: center; margin-top: 1.25rem;">
+                            <label style="font-size: 0.88rem;">預設年份: </label>
+                            <input type="number" id="parseCsvYear" value="2025" style="width: 100px;">
+                            <button class="btn btn-primary" onclick="parseCsvFile()">
+                                <i class="fa-solid fa-file-import"></i> 解析 CSV 檔案
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Mode 3: Image OCR Upload -->
+                    <div id="importModeImage" style="display: none; padding: 1.5rem; border: 2px dashed rgba(255, 255, 255, 0.2); border-radius: 0.75rem; text-align: center;">
+                        <i class="fa-solid fa-file-image" style="font-size: 2.5rem; color: #38bdf8; margin-bottom: 1rem;"></i>
+                        <h4 style="margin-bottom: 0.5rem;">上傳打卡截圖 (OCR 光學字元辨識)</h4>
+                        <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 1rem;">支援格式：.png, .jpg, .jpeg, .webp 打卡訊息對話截圖</p>
+                        <input type="file" id="imageFileInput" accept="image/*" style="display: none;" onchange="updateImageFileName()">
+                        <div style="display: flex; justify-content: center; gap: 1rem; align-items: center;">
+                            <button class="btn btn-secondary" onclick="document.getElementById('imageFileInput').click()">
+                                <i class="fa-solid fa-image"></i> 選擇圖片檔案
+                            </button>
+                            <span id="imageFileNameDisplay" style="font-size: 0.88rem; color: #a5b4fc;">未選擇檔案</span>
+                        </div>
+                        <div style="display: flex; gap: 1rem; align-items: center; justify-content: center; margin-top: 1.25rem;">
+                            <label style="font-size: 0.88rem;">預設年份: </label>
+                            <input type="number" id="parseImgYear" value="2025" style="width: 100px;">
+                            <button class="btn btn-primary" onclick="parseImageFile()">
+                                <i class="fa-solid fa-camera"></i> 開始圖片 OCR 辨識
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Preview Results Area -->
+            <div class="content-card" id="parsePreviewArea" style="display: none;">
+                <div class="card-header">
+                    <div class="card-title">
+                        <i class="fa-solid fa-eye"></i> 解析預覽
+                    </div>
+                    <button class="btn btn-success" onclick="confirmImport()">
+                        <i class="fa-solid fa-check"></i> 確認匯入資料庫
+                    </button>
+                </div>
+                <h4 style="margin-top: 0.5rem; font-size: 0.95rem; color: #818cf8;">加班項目 (<span id="parsedOtCount">0</span>)</h4>
+                <div class="table-responsive">
+                    <table>
+                        <thead>
+                            <tr><th>日期</th><th>姓名</th><th>時間區間</th><th>時數</th><th>事由</th><th>操作</th></tr>
+                        </thead>
+                        <tbody id="parsedOtBody"></tbody>
+                    </table>
+                </div>
+
+                <h4 style="margin-top: 1rem; font-size: 0.95rem; color: #38bdf8;">請假項目 (<span id="parsedLvCount">0</span>)</h4>
+                <div class="table-responsive">
+                    <table>
+                        <thead>
+                            <tr><th>日期</th><th>姓名</th><th>假別</th><th>時長</th><th>事由</th><th>操作</th></tr>
+                        </thead>
+                        <tbody id="parsedLvBody"></tbody>
+                    </table>
+                </div>
+
+                <!-- Warnings / Formatting Issues Block -->
+                <div id="parseWarningSection" style="margin-top: 1.5rem; display: none;">
+                    <h4 style="font-size: 0.95rem; color: var(--warning); display: flex; align-items: center; gap: 0.5rem;">
+                        <i class="fa-solid fa-triangle-exclamation"></i> 寫法或格式有疑慮之行數 (<span id="parsedWarnCount">0</span>)
+                    </h4>
+                    <p style="font-size: 0.82rem; color: var(--text-muted); margin-bottom: 0.5rem;">
+                        以下文字行未包含明確的加班時間區間 (如 19:00-21:00)、假別關鍵字，或未找到認識的團隊成員。請參考右側規格調整後重新解析。
+                    </p>
+                    <div class="table-responsive">
+                        <table>
+                            <thead>
+                                <tr><th>行號</th><th>原始文字</th><th>疑似人員</th><th>原因說明</th></tr>
+                            </thead>
+                            <tbody id="parsedWarnBody"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+            </div>
+        </div>
+
+        <!-- Members Management Tab -->
+        <div id="tab-members" class="tab-content">
+            <div class="content-card">
+                <div class="card-header">
+                    <div class="card-title">
+                        <i class="fa-solid fa-users-gear" style="color: var(--accent);"></i> 團隊成員名單管理 (KNOWN_NAMES)
+                    </div>
+                    <div class="filter-bar">
+                        <input type="text" id="newMemberName" placeholder="輸入新成員英文/中文名...">
+                        <button class="btn btn-primary" onclick="addMember()">
+                            <i class="fa-solid fa-user-plus"></i> 新增成員
+                        </button>
+                    </div>
+                </div>
+                <p style="font-size: 0.88rem; color: var(--text-muted);">
+                    在此維護的團隊成員名單會自動用於「打卡記錄文字解析」，解析器將根據此名單精準識別個人加班與請假。
+                </p>
+                <div class="table-responsive" style="max-width: 600px;">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>成員姓名</th>
+                                <th>操作</th>
+                            </tr>
+                        </thead>
+                        <tbody id="membersTableBody">
+                            <!-- Populated dynamically -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- Edit Preview Record Modal -->
+    <div id="editPreviewModal" class="modal-backdrop">
+        <div class="modal-card">
+            <div class="modal-header">
+                <div class="modal-title">
+                    <i class="fa-solid fa-pen-to-square" style="color: var(--primary);"></i> 編輯預覽紀錄
+                </div>
+                <button class="action-btn" onclick="closeEditModal()"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <div class="form-grid">
+                <div class="form-group">
+                    <label>日期</label>
+                    <input type="text" id="modalDate">
+                </div>
+                <div class="form-group">
+                    <label>姓名</label>
+                    <input type="text" id="modalName">
+                </div>
+                <div class="form-group" id="modalTimeGroup">
+                    <label>時間區間</label>
+                    <input type="text" id="modalTime">
+                </div>
+                <div class="form-group" id="modalHoursGroup">
+                    <label>時數 (hr)</label>
+                    <input type="number" step="0.5" id="modalHours">
+                </div>
+                <div class="form-group" id="modalLeaveTypeGroup" style="display:none;">
+                    <label>假別</label>
+                    <select id="modalLeaveType">
+                        <option value="黑假">黑假</option>
+                        <option value="WFH">WFH</option>
+                        <option value="病假">病假</option>
+                        <option value="事假">事假</option>
+                        <option value="特休">特休</option>
+                        <option value="生理假">生理假</option>
+                        <option value="出勤確認">出勤確認</option>
+                        <option value="因公外出">因公外出</option>
+                    </select>
+                </div>
+                <div class="form-group" id="modalDurationGroup" style="display:none;">
+                    <label>時長</label>
+                    <select id="modalDuration">
+                        <option value="1天">1天</option>
+                        <option value="0.5天">0.5天</option>
+                    </select>
+                </div>
+                <div class="form-group" style="grid-column: 1 / -1;">
+                    <label>事由</label>
+                    <input type="text" id="modalReason">
+                </div>
+            </div>
+            <div style="display: flex; justify-content: flex-end; gap: 0.75rem; margin-top: 0.5rem;">
+                <button class="btn btn-secondary" onclick="closeEditModal()">取消</button>
+                <button class="btn btn-primary" onclick="saveEditModal()">儲存變更</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast Notification -->
+    <div id="toast">
+        <i class="fa-solid fa-circle-check" style="color: var(--success);"></i>
+        <span id="toastMsg">操作成功</span>
+    </div>
+
+    <script>
+        let currentParsedData = { overtime_records: [], leave_records: [] };
+
+        // Initialize Month Selector
+        function initMonthSelector() {
+            const select = document.getElementById('monthSelect');
+            const now = new Date();
+            const currentYM = `${now.getFullYear()}/${String(now.getMonth() + 1).padStart(2, '0')}`;
+            
+            select.innerHTML = '';
+            for (let i = 0; i < 24; i++) {
+                const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+                const ym = `${d.getFullYear()}/${String(d.getMonth() + 1).padStart(2, '0')}`;
+                const opt = document.createElement('option');
+                opt.value = ym;
+                opt.textContent = ym;
+                if (ym === currentYM) opt.selected = true;
+                select.appendChild(opt);
+            }
+        }
+
+        // Tab Navigation
+        function switchTab(tabId) {
+            document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+            document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
+
+            const targetBtn = Array.from(document.querySelectorAll('.tab-btn')).find(b => b.getAttribute('onclick') && b.getAttribute('onclick').includes(tabId));
+            if (targetBtn) targetBtn.classList.add('active');
+
+            const targetContent = document.getElementById(`tab-${tabId}`);
+            if (targetContent) targetContent.classList.add('active');
+
+            if (tabId === 'dashboard') loadStats();
+            if (tabId === 'overtime') loadOvertime();
+            if (tabId === 'leaves') loadLeaves();
+            if (tabId === 'members') loadMembers();
+        }
+
+        // Show Toast
+        function showToast(msg) {
+            const toast = document.getElementById('toast');
+            document.getElementById('toastMsg').textContent = msg;
+            toast.classList.add('show');
+            setTimeout(() => toast.classList.remove('show'), 3000);
+        }
+
+        // Load All Data
+        function loadData() {
+            const activeTab = document.querySelector('.tab-content.active').id;
+            loadStats();
+            if (activeTab === 'tab-overtime') loadOvertime();
+            if (activeTab === 'tab-leaves') loadLeaves();
+        }
+
+        // Load Stats & Summary Table
+        async function loadStats() {
+            const month = document.getElementById('monthSelect').value;
+            const res = await fetch(`/api/stats?month=${encodeURIComponent(month)}`);
+            const data = await res.json();
+
+            const statsList = Array.isArray(data) ? data : (data.stats || []);
+            let totalOt = data.team_total_hours || 0;
+            let totalLeave = 0;
+
+            const tbody = document.getElementById('summaryTableBody');
+            tbody.innerHTML = '';
+
+            statsList.forEach(item => {
+                const otHours = item.overtime_hours !== undefined ? item.overtime_hours : (item.eval_hours || 0);
+                const googleComp = item.google_comp_total !== undefined ? item.google_comp_total : (item.google_comp_days || 0);
+                const leaveCount = item.leave_count !== undefined ? item.leave_count : ((item.sick_days || 0) + (item.personal_days || 0) + (item.black_days || 0) + (item.wfh_days || 0));
+                
+                totalLeave += leaveCount;
+
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td><strong>${item.name}</strong></td>
+                    <td>${item.ot_count || (otHours > 0 ? 1 : 0)}</td>
+                    <td><strong style="color: #818cf8;">${otHours} hr</strong></td>
+                    <td>${leaveCount}</td>
+                    <td>${googleComp} 天</td>
+                `;
+                tbody.appendChild(tr);
+            });
+
+            document.getElementById('stat-total-ot').textContent = `${totalOt.toFixed(1)} 小時`;
+            document.getElementById('stat-total-leave').textContent = `${totalLeave} 筆`;
+            document.getElementById('stat-member-count').textContent = `${statsList.length} 人`;
+        }
+
+        // Load Overtime Records
+        async function loadOvertime() {
+            const month = document.getElementById('monthSelect').value;
+            const search = document.getElementById('otSearch').value;
+            const otType = document.getElementById('otTypeFilter').value;
+            const res = await fetch(`/api/overtime?month=${encodeURIComponent(month)}&search=${encodeURIComponent(search)}&ot_type=${encodeURIComponent(otType)}`);
+            const records = await res.json();
+
+            const tbody = document.getElementById('overtimeTableBody');
+            tbody.innerHTML = '';
+
+            records.forEach(r => {
+                const tr = document.createElement('tr');
+                const isWeekend = r.note === '假日加班';
+                const noteBadge = isWeekend 
+                    ? `<span class="badge" style="background:rgba(245,158,11,0.2);color:#fcd34d;border:1px solid rgba(245,158,11,0.4)">假日加班</span>` 
+                    : `<span class="badge badge-ot">平日加班</span>`;
+
+                tr.innerHTML = `
+                    <td>${r.date}</td>
+                    <td>${noteBadge}</td>
+                    <td><strong>${r.name}</strong></td>
+                    <td>${r.time || '-'}</td>
+                    <td><span class="badge badge-ot">${r.hours} hr</span></td>
+                    <td>${r.reason || '-'}</td>
+                    <td>
+                        <button class="action-btn delete" onclick="deleteOvertime(${r.id})"><i class="fa-solid fa-trash"></i></button>
+                    </td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+
+        // Delete Overtime
+        async function deleteOvertime(id) {
+            if (!confirm('確定要刪除此筆加班紀錄嗎？')) return;
+            await fetch(`/api/overtime/${id}`, { method: 'DELETE' });
+            showToast('已成功刪除加班紀錄');
+            loadOvertime();
+            loadStats();
+        }
+
+        // Load Leaves
+        async function loadLeaves() {
+            const month = document.getElementById('monthSelect').value;
+            const search = document.getElementById('leaveSearch').value;
+            const leaveType = document.getElementById('leaveTypeFilter').value;
+            const res = await fetch(`/api/leaves?month=${encodeURIComponent(month)}&search=${encodeURIComponent(search)}&leave_types=${encodeURIComponent(leaveType)}`);
+            const records = await res.json();
+
+            const tbody = document.getElementById('leavesTableBody');
+            tbody.innerHTML = '';
+
+            records.forEach(r => {
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td>${r.date}</td>
+                    <td><strong>${r.name}</strong></td>
+                    <td><span class="badge badge-leave">${r.leave_type}</span></td>
+                    <td>${r.duration}</td>
+                    <td>${r.google_comp_days > 0 ? `${r.google_comp_days} 天` : '-'}</td>
+                    <td>${r.reason || '-'}</td>
+                    <td>
+                        <button class="action-btn delete" onclick="deleteLeave(${r.id})"><i class="fa-solid fa-trash"></i></button>
+                    </td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+
+        // Delete Leave
+        async function deleteLeave(id) {
+            if (!confirm('確定要刪除此筆請假紀錄嗎？')) return;
+            await fetch(`/api/leaves/${id}`, { method: 'DELETE' });
+            showToast('已成功刪除請假紀錄');
+            loadLeaves();
+            loadStats();
+        }
+
+        // Switch Import Mode
+        function switchImportMode(mode) {
+            document.getElementById('importModeText').style.display = (mode === 'text') ? 'block' : 'none';
+            document.getElementById('importModeCsv').style.display = (mode === 'csv') ? 'block' : 'none';
+            document.getElementById('importModeImage').style.display = (mode === 'image') ? 'block' : 'none';
+
+            document.getElementById('btnModeText').className = (mode === 'text') ? 'btn btn-primary' : 'btn btn-secondary';
+            document.getElementById('btnModeCsv').className = (mode === 'csv') ? 'btn btn-primary' : 'btn btn-secondary';
+            document.getElementById('btnModeImage').className = (mode === 'image') ? 'btn btn-primary' : 'btn btn-secondary';
+        }
+
+        function updateCsvFileName() {
+            const input = document.getElementById('csvFileInput');
+            const display = document.getElementById('csvFileNameDisplay');
+            if (input.files && input.files[0]) {
+                display.textContent = input.files[0].name;
+            } else {
+                display.textContent = '未選擇檔案';
+            }
+        }
+
+        function updateImageFileName() {
+            const input = document.getElementById('imageFileInput');
+            const display = document.getElementById('imageFileNameDisplay');
+            if (input.files && input.files[0]) {
+                display.textContent = input.files[0].name;
+            } else {
+                display.textContent = '未選擇檔案';
+            }
+        }
+
+        // Parse Raw Text
+        async function parseText() {
+            const text = document.getElementById('rawParseInput').value;
+            const year = document.getElementById('parseYear').value;
+            if (!text.trim()) {
+                alert('請先輸入或貼上日誌文字');
+                return;
+            }
+
+            const res = await fetch('/api/parse', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ text, year })
+            });
+
+            currentParsedData = await res.json();
+            document.getElementById('parsePreviewArea').style.display = 'block';
+            renderParsedPreview();
+        }
+
+        // Parse CSV File
+        async function parseCsvFile() {
+            const fileInput = document.getElementById('csvFileInput');
+            const year = document.getElementById('parseCsvYear').value;
+            if (!fileInput.files || !fileInput.files[0]) {
+                alert('請先選擇 CSV 檔案');
+                return;
+            }
+
+            const formData = new FormData();
+            formData.append('file', fileInput.files[0]);
+            formData.append('year', year);
+
+            showToast('正在解析 CSV 檔案...');
+            const res = await fetch('/api/parse_csv', {
+                method: 'POST',
+                body: formData
+            });
+
+            const result = await res.json();
+            if (result.status === 'error') {
+                alert(result.message);
+                return;
+            }
+
+            currentParsedData = result;
+            document.getElementById('parsePreviewArea').style.display = 'block';
+            renderParsedPreview();
+            showToast('CSV 解析完成！');
+        }
+
+        // Parse Image OCR File
+        async function parseImageFile() {
+            const fileInput = document.getElementById('imageFileInput');
+            const year = document.getElementById('parseImgYear').value;
+            if (!fileInput.files || !fileInput.files[0]) {
+                alert('請先選擇圖片檔案');
+                return;
+            }
+
+            const formData = new FormData();
+            formData.append('file', fileInput.files[0]);
+            formData.append('year', year);
+
+            showToast('正在辨識圖片中 (OCR)...');
+            const res = await fetch('/api/parse_image', {
+                method: 'POST',
+                body: formData
+            });
+
+            const result = await res.json();
+            if (result.status === 'error') {
+                alert(result.message);
+                return;
+            }
+
+            currentParsedData = result;
+            document.getElementById('parsePreviewArea').style.display = 'block';
+            renderParsedPreview();
+            showToast('圖片 OCR 識別完成！');
+        }
+
+        // Render Parsed Preview Tables
+        function renderParsedPreview() {
+            // Populate OT
+            const otBody = document.getElementById('parsedOtBody');
+            otBody.innerHTML = '';
+            const otRecords = currentParsedData.overtime_records || [];
+            document.getElementById('parsedOtCount').textContent = otRecords.length;
+            
+            otRecords.forEach((r, idx) => {
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td>${r.date}</td>
+                    <td><strong>${r.name}</strong></td>
+                    <td>${r.time}</td>
+                    <td>${r.hours} hr</td>
+                    <td>${r.reason}</td>
+                    <td>
+                        <button class="action-btn" onclick="openEditModal('ot', ${idx})"><i class="fa-solid fa-pen-to-square"></i> 編輯</button>
+                        <button class="action-btn delete" onclick="deleteParsedItem('ot', ${idx})"><i class="fa-solid fa-trash"></i></button>
+                    </td>
+                `;
+                otBody.appendChild(tr);
+            });
+
+            // Populate Leave
+            const lvBody = document.getElementById('parsedLvBody');
+            lvBody.innerHTML = '';
+            const lvRecords = currentParsedData.leave_records || [];
+            document.getElementById('parsedLvCount').textContent = lvRecords.length;
+            
+            lvRecords.forEach((r, idx) => {
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td>${r.date}</td>
+                    <td><strong>${r.name}</strong></td>
+                    <td><span class="badge badge-leave">${r.leave_type}</span></td>
+                    <td>${r.duration}</td>
+                    <td>${r.reason}</td>
+                    <td>
+                        <button class="action-btn" onclick="openEditModal('leave', ${idx})"><i class="fa-solid fa-pen-to-square"></i> 編輯</button>
+                        <button class="action-btn delete" onclick="deleteParsedItem('leave', ${idx})"><i class="fa-solid fa-trash"></i></button>
+                    </td>
+                `;
+                lvBody.appendChild(tr);
+            });
+
+            // Populate Warnings
+            const warnSection = document.getElementById('parseWarningSection');
+            const warnBody = document.getElementById('parsedWarnBody');
+            warnBody.innerHTML = '';
+            const warnings = currentParsedData.warning_records || [];
+            document.getElementById('parsedWarnCount').textContent = warnings.length;
+
+            if (warnings.length > 0) {
+                warnSection.style.display = 'block';
+                warnings.forEach(w => {
+                    const tr = document.createElement('tr');
+                    tr.innerHTML = `
+                        <td><span class="badge badge-ot" style="background:rgba(245,158,11,0.2);color:#fcd34d;border-color:rgba(245,158,11,0.4)">Line ${w.line}</span></td>
+                        <td><code>${w.raw}</code></td>
+                        <td>${w.person || '-'}</td>
+                        <td><span style="color:var(--warning);">${w.reason}</span></td>
+                    `;
+                    warnBody.appendChild(tr);
+                });
+            } else {
+                warnSection.style.display = 'none';
+            }
+        }
+
+        // Delete item from parsed preview
+        function deleteParsedItem(type, index) {
+            if (type === 'ot') {
+                currentParsedData.overtime_records.splice(index, 1);
+            } else {
+                currentParsedData.leave_records.splice(index, 1);
+            }
+            showToast('已刪除預覽項目');
+            renderParsedPreview();
+        }
+
+        let editingRecordState = { type: null, index: null };
+
+        // Open Modal to edit item
+        function openEditModal(type, index) {
+            editingRecordState = { type, index };
+            const modal = document.getElementById('editPreviewModal');
+            const item = (type === 'ot') ? currentParsedData.overtime_records[index] : currentParsedData.leave_records[index];
+
+            document.getElementById('modalDate').value = item.date || '';
+            document.getElementById('modalName').value = item.name || '';
+            document.getElementById('modalReason').value = item.reason || '';
+
+            if (type === 'ot') {
+                document.getElementById('modalTimeGroup').style.display = 'flex';
+                document.getElementById('modalHoursGroup').style.display = 'flex';
+                document.getElementById('modalLeaveTypeGroup').style.display = 'none';
+                document.getElementById('modalDurationGroup').style.display = 'none';
+
+                document.getElementById('modalTime').value = item.time || '';
+                document.getElementById('modalHours').value = item.hours || 0;
+            } else {
+                document.getElementById('modalTimeGroup').style.display = 'none';
+                document.getElementById('modalHoursGroup').style.display = 'none';
+                document.getElementById('modalLeaveTypeGroup').style.display = 'flex';
+                document.getElementById('modalDurationGroup').style.display = 'flex';
+
+                document.getElementById('modalLeaveType').value = item.leave_type || '黑假';
+                document.getElementById('modalDuration').value = item.duration || '1天';
+            }
+
+            modal.classList.add('show');
+        }
+
+        // Close Edit Modal
+        function closeEditModal() {
+            document.getElementById('editPreviewModal').classList.remove('show');
+        }
+
+        // Save Edit Modal
+        function saveEditModal() {
+            const { type, index } = editingRecordState;
+            if (type === null || index === null) return;
+
+            const item = (type === 'ot') ? currentParsedData.overtime_records[index] : currentParsedData.leave_records[index];
+            item.date = document.getElementById('modalDate').value;
+            item.name = document.getElementById('modalName').value;
+            item.reason = document.getElementById('modalReason').value;
+
+            if (type === 'ot') {
+                item.time = document.getElementById('modalTime').value;
+                item.hours = parseFloat(document.getElementById('modalHours').value || 0);
+                item.eval_hours = item.hours;
+            } else {
+                item.leave_type = document.getElementById('modalLeaveType').value;
+                item.duration = document.getElementById('modalDuration').value;
+                item.google_comp_days = (item.leave_type === '黑假' || item.leave_type === 'WFH') ? (item.duration === '0.5天' ? 0.5 : 1.0) : 0.0;
+            }
+
+            showToast('已更新預覽項目');
+            closeEditModal();
+            renderParsedPreview();
+        }
+
+        // Confirm Import
+        async function confirmImport() {
+            const res = await fetch('/api/confirm_import', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(currentParsedData)
+            });
+            const result = await res.json();
+            showToast(result.message || '資料匯入成功！');
+            document.getElementById('parsePreviewArea').style.display = 'none';
+            document.getElementById('rawParseInput').value = '';
+            
+            // Check sample date from imported records to auto switch month dropdown if available
+            const sampleRec = (currentParsedData.overtime_records || [])[0] || (currentParsedData.leave_records || [])[0];
+            if (sampleRec && sampleRec.date) {
+                const parts = sampleRec.date.replace('-', '/').split('/');
+                if (parts.length >= 2) {
+                    const ym = `${parts[0]}/${parts[1].padStart(2, '0')}`;
+                    const select = document.getElementById('monthSelect');
+                    if (Array.from(select.options).some(opt => opt.value === ym)) {
+                        select.value = ym;
+                    }
+                }
+            }
+
+            // Auto refresh all data tables
+            await loadStats();
+            await loadOvertime();
+            await loadLeaves();
+
+            // Automatically switch to Dashboard tab so user can see imported data immediately
+            switchTab('dashboard');
+        }
+
+        // Load Members
+        async function loadMembers() {
+            const res = await fetch('/api/members');
+            const members = await res.json();
+
+            const tbody = document.getElementById('membersTableBody');
+            tbody.innerHTML = '';
+
+            members.forEach(m => {
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td><strong>${m.name}</strong></td>
+                    <td>
+                        <button class="action-btn delete" onclick="deleteMember(${m.id})"><i class="fa-solid fa-trash"></i> 刪除</button>
+                    </td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+
+        // Add Member
+        async function addMember() {
+            const input = document.getElementById('newMemberName');
+            const name = input.value.trim();
+            if (!name) {
+                alert('請輸入成員姓名');
+                return;
+            }
+
+            const res = await fetch('/api/members', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name })
+            });
+
+            if (res.ok) {
+                showToast(`已新增成員：${name}`);
+                input.value = '';
+                loadMembers();
+            } else {
+                const err = await res.json();
+                alert(err.message || '新增失敗');
+            }
+        }
+
+        // Delete Member
+        async function deleteMember(id) {
+            if (!confirm('確定要刪除此成員嗎？（不會刪除其既有的歷史加班紀錄）')) return;
+            await fetch(`/api/members/${id}`, { method: 'DELETE' });
+            showToast('已刪除成員');
+            loadMembers();
+        }
+
+        // Export CSV
+        function exportCSV() {
+            const month = document.getElementById('monthSelect').value;
+            window.location.href = `/api/export?month=${encodeURIComponent(month)}`;
+        }
+
+        // Startup
+        document.addEventListener('DOMContentLoaded', () => {
+            initMonthSelector();
+            loadStats();
+        });
+    </script>
+</body>
+</html>
