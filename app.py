@@ -11,6 +11,20 @@ app = Flask(__name__)
 # Ensure DB is initialized on app startup
 database.init_db()
 
+ADMIN_PASSWORD = os.environ.get('ADMIN_PASSWORD', '1234')
+
+def is_admin_authorized():
+    req_pw = request.headers.get('X-Admin-Password') or (request.json or {}).get('admin_password', '')
+    return req_pw == ADMIN_PASSWORD
+
+@app.route('/api/verify_admin', methods=['POST'])
+def verify_admin():
+    data = request.json or {}
+    password = data.get('password', '')
+    if password == ADMIN_PASSWORD:
+        return jsonify({"status": "success", "unlocked": True})
+    return jsonify({"status": "error", "message": "管理員密碼錯誤！"}), 401
+
 @app.route('/')
 def index():
     return render_template('index.html')
@@ -22,6 +36,8 @@ def get_members():
 
 @app.route('/api/members', methods=['POST'])
 def add_member():
+    if not is_admin_authorized():
+        return jsonify({"status": "error", "message": "需要管理員權限才能執行此操作！"}), 403
     data = request.json or {}
     name = data.get('name', '')
     location = data.get('location', '台灣辦公室')
@@ -32,6 +48,8 @@ def add_member():
 
 @app.route('/api/members/<int:member_id>/location', methods=['PUT'])
 def update_member_location(member_id):
+    if not is_admin_authorized():
+        return jsonify({"status": "error", "message": "需要管理員權限才能執行此操作！"}), 403
     data = request.json or {}
     location = data.get('location', '台灣辦公室')
     database.update_member_location(member_id, location)
@@ -39,6 +57,8 @@ def update_member_location(member_id):
 
 @app.route('/api/members/<int:member_id>', methods=['DELETE'])
 def delete_member(member_id):
+    if not is_admin_authorized():
+        return jsonify({"status": "error", "message": "需要管理員權限才能執行此操作！"}), 403
     database.delete_member(member_id)
     return jsonify({"status": "success"})
 
@@ -132,6 +152,8 @@ def parse_image():
 
 @app.route('/api/confirm_import', methods=['POST'])
 def confirm_import():
+    if not is_admin_authorized():
+        return jsonify({"status": "error", "message": "需要管理員權限才能執行此操作！"}), 403
     data = request.json or {}
     ot_list = data.get('overtime_records', [])
     lv_list = data.get('leave_records', [])
@@ -165,6 +187,8 @@ def get_member_locations_history():
 
 @app.route('/api/members/locations', methods=['POST'])
 def add_member_location_history_endpoint():
+    if not is_admin_authorized():
+        return jsonify({"status": "error", "message": "需要管理員權限才能執行此操作！"}), 403
     data = request.json or {}
     name = data.get('name')
     start_date = data.get('start_date')
@@ -177,11 +201,15 @@ def add_member_location_history_endpoint():
 
 @app.route('/api/members/locations/<int:hid>', methods=['DELETE'])
 def delete_member_location_history_endpoint(hid):
+    if not is_admin_authorized():
+        return jsonify({"status": "error", "message": "需要管理員權限才能執行此操作！"}), 403
     database.delete_member_location_history(hid)
     return jsonify({"status": "success"})
 
 @app.route('/api/members/locations/<int:hid>', methods=['PUT'])
 def update_member_location_history_endpoint(hid):
+    if not is_admin_authorized():
+        return jsonify({"status": "error", "message": "需要管理員權限才能執行此操作！"}), 403
     data = request.json or {}
     name = data.get('name')
     start_date = data.get('start_date')
@@ -194,6 +222,8 @@ def update_member_location_history_endpoint(hid):
 
 @app.route('/api/overtime', methods=['POST'])
 def add_overtime():
+    if not is_admin_authorized():
+        return jsonify({"status": "error", "message": "需要管理員權限才能執行此操作！"}), 403
     data = request.json or {}
     date = data.get('date')
     name = data.get('name')
@@ -218,6 +248,8 @@ def get_overtime_by_id(rec_id):
 
 @app.route('/api/overtime/<int:rec_id>', methods=['PUT'])
 def update_overtime(rec_id):
+    if not is_admin_authorized():
+        return jsonify({"status": "error", "message": "需要管理員權限才能執行此操作！"}), 403
     data = request.json or {}
     date = data.get('date')
     name = data.get('name')
@@ -235,6 +267,8 @@ def update_overtime(rec_id):
 
 @app.route('/api/overtime/<int:rec_id>', methods=['DELETE'])
 def delete_overtime(rec_id):
+    if not is_admin_authorized():
+        return jsonify({"status": "error", "message": "需要管理員權限才能執行此操作！"}), 403
     database.delete_overtime_record(rec_id)
     return jsonify({"status": "success"})
 
@@ -251,6 +285,8 @@ def get_leaves():
 
 @app.route('/api/leaves', methods=['POST'])
 def add_leave():
+    if not is_admin_authorized():
+        return jsonify({"status": "error", "message": "需要管理員權限才能執行此操作！"}), 403
     data = request.json or {}
     date = data.get('date')
     name = data.get('name')
@@ -264,6 +300,8 @@ def add_leave():
 
 @app.route('/api/leaves/<int:rec_id>', methods=['PUT'])
 def update_leave(rec_id):
+    if not is_admin_authorized():
+        return jsonify({"status": "error", "message": "需要管理員權限才能執行此操作！"}), 403
     data = request.json or {}
     date = data.get('date')
     name = data.get('name')
@@ -277,6 +315,8 @@ def update_leave(rec_id):
 
 @app.route('/api/leaves/<int:rec_id>', methods=['DELETE'])
 def delete_leave(rec_id):
+    if not is_admin_authorized():
+        return jsonify({"status": "error", "message": "需要管理員權限才能執行此操作！"}), 403
     database.delete_leave_record(rec_id)
     return jsonify({"status": "success"})
 

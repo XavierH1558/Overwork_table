@@ -489,6 +489,14 @@
             <button class="btn btn-secondary" onclick="exportCSV()">
                 <i class="fa-solid fa-file-csv"></i> 匯出 CSV
             </button>
+            <div id="adminAuthControl">
+                <button class="btn btn-secondary" id="btnAdminUnlock" onclick="openAdminPasswordModal()" style="border-color: rgba(245,158,11,0.5); color: #fcd34d;">
+                    <i class="fa-solid fa-lock"></i> 解鎖管理員
+                </button>
+                <button class="btn btn-secondary" id="btnAdminLock" onclick="lockAdminAuth()" style="display:none; border-color: rgba(16,185,129,0.5); color: #6ee7b7;">
+                    <i class="fa-solid fa-lock-open"></i> 已驗證管理員
+                </button>
+            </div>
         </div>
     </header>
 
@@ -1059,6 +1067,29 @@
         </div>
     </div>
 
+    <!-- Admin Password Modal -->
+    <div id="adminPasswordModal" class="modal-backdrop">
+        <div class="modal-card" style="max-width: 420px;">
+            <div class="modal-header">
+                <div class="modal-title">
+                    <i class="fa-solid fa-shield-halved" style="color: var(--warning);"></i> 管理員密碼驗證
+                </div>
+                <button class="action-btn" onclick="closeAdminPasswordModal()"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <p style="font-size: 0.88rem; color: var(--text-muted); margin-top: 0.5rem; margin-bottom: 1rem;">
+                系統已開啟管理員保護模式，請輸入管理員密碼以解鎖「新增、編輯、刪除、批次匯入」功能。
+            </p>
+            <div class="form-group">
+                <label>管理員密碼 (預設: 1234)</label>
+                <input type="password" id="inputAdminPassword" placeholder="請輸入密碼..." onkeydown="if(event.key==='Enter') submitAdminPassword()">
+            </div>
+            <div class="modal-footer" style="display: flex; justify-content: flex-end; gap: 0.75rem; margin-top: 1.25rem;">
+                <button class="btn btn-secondary" onclick="closeAdminPasswordModal()">取消</button>
+                <button class="btn btn-primary" onclick="submitAdminPassword()"><i class="fa-solid fa-key"></i> 驗證解鎖</button>
+            </div>
+        </div>
+    </div>
+
     <!-- Toast Notification -->
     <div id="toast">
         <i class="fa-solid fa-circle-check" style="color: var(--success);"></i>
@@ -1067,6 +1098,87 @@
 
     <script>
         let currentParsedData = { overtime_records: [], leave_records: [] };
+        let pendingAdminCallback = null;
+
+        function getAuthHeaders(extra = {}) {
+            const pw = sessionStorage.getItem('admin_password') || '';
+            return {
+                'Content-Type': 'application/json',
+                'X-Admin-Password': pw,
+                ...extra
+            };
+        }
+
+        function updateAdminAuthUI() {
+            const isUnlocked = sessionStorage.getItem('admin_unlocked') === 'true';
+            const btnUnlock = document.getElementById('btnAdminUnlock');
+            const btnLock = document.getElementById('btnAdminLock');
+            if (btnUnlock) btnUnlock.style.display = isUnlocked ? 'none' : 'inline-flex';
+            if (btnLock) btnLock.style.display = isUnlocked ? 'inline-flex' : 'none';
+        }
+
+        function openAdminPasswordModal(callback) {
+            pendingAdminCallback = callback || null;
+            document.getElementById('inputAdminPassword').value = '';
+            document.getElementById('adminPasswordModal').classList.add('show');
+            setTimeout(() => {
+                const inp = document.getElementById('inputAdminPassword');
+                if (inp) inp.focus();
+            }, 100);
+        }
+
+        function closeAdminPasswordModal() {
+            document.getElementById('adminPasswordModal').classList.remove('show');
+            pendingAdminCallback = null;
+        }
+
+        async function submitAdminPassword() {
+            const pw = document.getElementById('inputAdminPassword').value.trim();
+            if (!pw) {
+                alert('請輸入管理員密碼');
+                return;
+            }
+
+            try {
+                const res = await fetch('/api/verify_admin', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ password: pw })
+                });
+
+                if (res.ok) {
+                    sessionStorage.setItem('admin_unlocked', 'true');
+                    sessionStorage.setItem('admin_password', pw);
+                    updateAdminAuthUI();
+                    closeAdminPasswordModal();
+                    showToast('已成功解鎖管理員權限！');
+                    if (pendingAdminCallback) {
+                        const cb = pendingAdminCallback;
+                        pendingAdminCallback = null;
+                        cb();
+                    }
+                } else {
+                    alert('管理員密碼錯誤，請重試！');
+                }
+            } catch (e) {
+                alert('驗證失敗：' + e);
+            }
+        }
+
+        function lockAdminAuth() {
+            sessionStorage.removeItem('admin_unlocked');
+            sessionStorage.removeItem('admin_password');
+            updateAdminAuthUI();
+            showToast('已切換為鎖定狀態');
+        }
+
+        function ensureAdminUnlocked(callback) {
+            if (sessionStorage.getItem('admin_unlocked') === 'true') {
+                callback();
+            } else {
+                openAdminPasswordModal(callback);
+            }
+        }
 
         // Initialize Month Selectors (Starting from 2026/07)
         function initMonthSelector() {
@@ -1397,12 +1509,19 @@
         }
 
         // Delete Overtime
-        async function deleteOvertime(id) {
-            if (!confirm('確定要刪除此筆加班紀錄嗎？')) return;
-            await fetch(`/api/overtime/${id}`, { method: 'DELETE' });
-            showToast('已成功刪除加班紀錄');
-            loadOvertime();
-            loadStats();
+        function deleteOvertime(id) {
+            ensureAdminUnlocked(async () => {
+                if (!confirm('確定要刪除此筆加班紀錄嗎？')) return;
+                const res = await fetch(`/api/overtime/${id}`, { method: 'DELETE', headers: getAuthHeaders() });
+                if (res.ok) {
+                    showToast('已成功刪除加班紀錄');
+                    loadOvertime();
+                    loadStats();
+                } else {
+                    const err = await res.json();
+                    alert(err.message || '刪除失敗');
+                }
+            });
         }
 
         // Leave Badge Class Helper
@@ -1450,12 +1569,19 @@
         }
 
         // Delete Leave
-        async function deleteLeave(id) {
-            if (!confirm('確定要刪除此筆請假紀錄嗎？')) return;
-            await fetch(`/api/leaves/${id}`, { method: 'DELETE' });
-            showToast('已成功刪除請假紀錄');
-            loadLeaves();
-            loadStats();
+        function deleteLeave(id) {
+            ensureAdminUnlocked(async () => {
+                if (!confirm('確定要刪除此筆請假紀錄嗎？')) return;
+                const res = await fetch(`/api/leaves/${id}`, { method: 'DELETE', headers: getAuthHeaders() });
+                if (res.ok) {
+                    showToast('已成功刪除請假紀錄');
+                    loadLeaves();
+                    loadStats();
+                } else {
+                    const err = await res.json();
+                    alert(err.message || '刪除失敗');
+                }
+            });
         }
 
         // Switch Import Mode
@@ -1729,48 +1855,52 @@
 
         // Show Add Overtime Modal
         function showAddOtModal() {
-            const today = new Date();
-            const ym = document.getElementById('monthSelect').value || `${today.getFullYear()}/${String(today.getMonth() + 1).padStart(2, '0')}`;
-            const defaultDate = `${ym}/01`;
+            ensureAdminUnlocked(() => {
+                const today = new Date();
+                const ym = document.getElementById('monthSelect').value || `${today.getFullYear()}/${String(today.getMonth() + 1).padStart(2, '0')}`;
+                const defaultDate = `${ym}/01`;
 
-            editingRecordState = { type: 'add_ot', index: null };
-            document.getElementById('modalTitleText').innerHTML = `<i class="fa-solid fa-plus" style="color: var(--primary);"></i> 新增加班紀錄`;
-            
-            document.getElementById('modalDate').value = defaultDate;
-            document.getElementById('modalName').value = '';
-            document.getElementById('modalReason').value = '';
-            document.getElementById('modalTimeGroup').style.display = 'flex';
-            document.getElementById('modalHoursGroup').style.display = 'flex';
-            document.getElementById('modalLeaveTypeGroup').style.display = 'none';
-            document.getElementById('modalDurationGroup').style.display = 'none';
+                editingRecordState = { type: 'add_ot', index: null };
+                document.getElementById('modalTitleText').innerHTML = `<i class="fa-solid fa-plus" style="color: var(--primary);"></i> 新增加班紀錄`;
+                
+                document.getElementById('modalDate').value = defaultDate;
+                document.getElementById('modalName').value = '';
+                document.getElementById('modalReason').value = '';
+                document.getElementById('modalTimeGroup').style.display = 'flex';
+                document.getElementById('modalHoursGroup').style.display = 'flex';
+                document.getElementById('modalLeaveTypeGroup').style.display = 'none';
+                document.getElementById('modalDurationGroup').style.display = 'none';
 
-            document.getElementById('modalTime').value = '19:00-20:00';
-            document.getElementById('modalHours').value = 1.0;
+                document.getElementById('modalTime').value = '19:00-20:00';
+                document.getElementById('modalHours').value = 1.0;
 
-            document.getElementById('editPreviewModal').classList.add('show');
+                document.getElementById('editPreviewModal').classList.add('show');
+            });
         }
 
         // Show Add Leave Modal
         function showAddLeaveModal() {
-            const today = new Date();
-            const ym = document.getElementById('monthSelect').value || `${today.getFullYear()}/${String(today.getMonth() + 1).padStart(2, '0')}`;
-            const defaultDate = `${ym}/01`;
+            ensureAdminUnlocked(() => {
+                const today = new Date();
+                const ym = document.getElementById('monthSelect').value || `${today.getFullYear()}/${String(today.getMonth() + 1).padStart(2, '0')}`;
+                const defaultDate = `${ym}/01`;
 
-            editingRecordState = { type: 'add_leave', index: null };
-            document.getElementById('modalTitleText').innerHTML = `<i class="fa-solid fa-plus" style="color: var(--primary);"></i> 新增請假紀錄`;
-            
-            document.getElementById('modalDate').value = defaultDate;
-            document.getElementById('modalName').value = '';
-            document.getElementById('modalReason').value = '';
-            document.getElementById('modalTimeGroup').style.display = 'none';
-            document.getElementById('modalHoursGroup').style.display = 'none';
-            document.getElementById('modalLeaveTypeGroup').style.display = 'flex';
-            document.getElementById('modalDurationGroup').style.display = 'flex';
+                editingRecordState = { type: 'add_leave', index: null };
+                document.getElementById('modalTitleText').innerHTML = `<i class="fa-solid fa-plus" style="color: var(--primary);"></i> 新增請假紀錄`;
+                
+                document.getElementById('modalDate').value = defaultDate;
+                document.getElementById('modalName').value = '';
+                document.getElementById('modalReason').value = '';
+                document.getElementById('modalTimeGroup').style.display = 'none';
+                document.getElementById('modalHoursGroup').style.display = 'none';
+                document.getElementById('modalLeaveTypeGroup').style.display = 'flex';
+                document.getElementById('modalDurationGroup').style.display = 'flex';
 
-            document.getElementById('modalLeaveType').value = '黑假';
-            document.getElementById('modalDuration').value = '1天';
+                document.getElementById('modalLeaveType').value = '黑假';
+                document.getElementById('modalDuration').value = '1天';
 
-            document.getElementById('editPreviewModal').classList.add('show');
+                document.getElementById('editPreviewModal').classList.add('show');
+            });
         }
 
         // Close Edit Modal
@@ -1784,31 +1914,33 @@
         }
 
         // Open OT Edit Modal for saved DB records
-        async function openOtEditModal(recId) {
-            const res = await fetch(`/api/overtime/${recId}`);
-            const r = await res.json();
+        function openOtEditModal(recId) {
+            ensureAdminUnlocked(async () => {
+                const res = await fetch(`/api/overtime/${recId}`);
+                const r = await res.json();
 
-            editingRecordState = { type: 'edit_ot_db', id: recId };
-            document.getElementById('modalTitleText').innerHTML = `<i class="fa-solid fa-pen-to-square" style="color: var(--primary);"></i> 編輯加班紀錄`;
+                editingRecordState = { type: 'edit_ot_db', id: recId };
+                document.getElementById('modalTitleText').innerHTML = `<i class="fa-solid fa-pen-to-square" style="color: var(--primary);"></i> 編輯加班紀錄`;
 
-            document.getElementById('modalDate').value = r.date || '';
-            document.getElementById('modalName').value = r.name || '';
-            document.getElementById('modalReason').value = r.reason || '';
-            document.getElementById('modalTime').value = r.time || '';
-            document.getElementById('modalHours').value = r.hours || 0;
+                document.getElementById('modalDate').value = r.date || '';
+                document.getElementById('modalName').value = r.name || '';
+                document.getElementById('modalReason').value = r.reason || '';
+                document.getElementById('modalTime').value = r.time || '';
+                document.getElementById('modalHours').value = r.hours || 0;
 
-            document.getElementById('modalTimeGroup').style.display = 'flex';
-            document.getElementById('modalHoursGroup').style.display = 'flex';
-            document.getElementById('modalLeaveTypeGroup').style.display = 'none';
-            document.getElementById('modalDurationGroup').style.display = 'none';
-            document.getElementById('modalSpecialGroup').style.display = 'block';
+                document.getElementById('modalTimeGroup').style.display = 'flex';
+                document.getElementById('modalHoursGroup').style.display = 'flex';
+                document.getElementById('modalLeaveTypeGroup').style.display = 'none';
+                document.getElementById('modalDurationGroup').style.display = 'none';
+                document.getElementById('modalSpecialGroup').style.display = 'block';
 
-            const isSpecial = !!r.is_special;
-            document.getElementById('modalIsSpecial').checked = isSpecial;
-            document.getElementById('modalSpecialReason').value = r.special_reason || '';
-            document.getElementById('modalSpecialReasonGroup').style.display = isSpecial ? 'block' : 'none';
+                const isSpecial = !!r.is_special;
+                document.getElementById('modalIsSpecial').checked = isSpecial;
+                document.getElementById('modalSpecialReason').value = r.special_reason || '';
+                document.getElementById('modalSpecialReasonGroup').style.display = isSpecial ? 'block' : 'none';
 
-            document.getElementById('editPreviewModal').classList.add('show');
+                document.getElementById('editPreviewModal').classList.add('show');
+            });
         }
 
         // Save Edit Modal
@@ -1834,7 +1966,7 @@
 
                 const res = await fetch(`/api/overtime/${id}`, {
                     method: 'PUT',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: getAuthHeaders(),
                     body: JSON.stringify({ date, name, time, hours, reason, eval_hours: hours,
                                           is_special: isSpecial, special_reason: specialReason })
                 });
@@ -1844,7 +1976,8 @@
                     loadOvertime();
                     loadStats();
                 } else {
-                    alert('更新失敗');
+                    const err = await res.json();
+                    alert(err.message || '更新失敗');
                 }
                 return;
             }
@@ -1855,7 +1988,7 @@
 
                 const res = await fetch('/api/overtime', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: getAuthHeaders(),
                     body: JSON.stringify({ date, name, time, hours, reason })
                 });
                 if (res.ok) {
@@ -1864,7 +1997,8 @@
                     loadOvertime();
                     loadStats();
                 } else {
-                    alert('新增加班紀錄失敗');
+                    const err = await res.json();
+                    alert(err.message || '新增加班紀錄失敗');
                 }
                 return;
             }
@@ -1876,7 +2010,7 @@
 
                 const res = await fetch('/api/leaves', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: getAuthHeaders(),
                     body: JSON.stringify({ date, name, leave_type, duration, google_comp_days, reason })
                 });
                 if (res.ok) {
@@ -1885,7 +2019,8 @@
                     loadLeaves();
                     loadStats();
                 } else {
-                    alert('新增請假紀錄失敗');
+                    const err = await res.json();
+                    alert(err.message || '新增請假紀錄失敗');
                 }
                 return;
             }
@@ -1914,44 +2049,46 @@
         }
 
         // Confirm Import
-        async function confirmImport() {
-            try {
-                const res = await fetch('/api/confirm_import', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(currentParsedData)
-                });
-                if (!res.ok) {
-                    const err = await res.json();
-                    alert(err.message || ('匯入失敗 (HTTP ' + res.status + ')'));
-                    return;
-                }
-                const result = await res.json();
-                showToast(result.message || '資料匯入成功！');
-                document.getElementById('parsePreviewArea').style.display = 'none';
-                document.getElementById('rawParseInput').value = '';
-                
-                // Check sample date from imported records to auto switch month dropdown if available
-                const sampleRec = (currentParsedData.overtime_records || [])[0] || (currentParsedData.leave_records || [])[0];
-                if (sampleRec && sampleRec.date) {
-                    const parts = sampleRec.date.replace('-', '/').split('/');
-                    if (parts.length >= 2) {
-                        const ym = `${parts[0]}/${parts[1].padStart(2, '0')}`;
-                        syncMonthSelect(ym);
+        function confirmImport() {
+            ensureAdminUnlocked(async () => {
+                try {
+                    const res = await fetch('/api/confirm_import', {
+                        method: 'POST',
+                        headers: getAuthHeaders(),
+                        body: JSON.stringify(currentParsedData)
+                    });
+                    if (!res.ok) {
+                        const err = await res.json();
+                        alert(err.message || ('匯入失敗 (HTTP ' + res.status + ')'));
+                        return;
                     }
+                    const result = await res.json();
+                    showToast(result.message || '資料匯入成功！');
+                    document.getElementById('parsePreviewArea').style.display = 'none';
+                    document.getElementById('rawParseInput').value = '';
+                    
+                    // Check sample date from imported records to auto switch month dropdown if available
+                    const sampleRec = (currentParsedData.overtime_records || [])[0] || (currentParsedData.leave_records || [])[0];
+                    if (sampleRec && sampleRec.date) {
+                        const parts = sampleRec.date.replace('-', '/').split('/');
+                        if (parts.length >= 2) {
+                            const ym = `${parts[0]}/${parts[1].padStart(2, '0')}`;
+                            syncMonthSelect(ym);
+                        }
+                    }
+
+                    // Auto refresh all data tables
+                    await loadStats();
+                    await loadOvertime();
+                    await loadLeaves();
+
+                    // Automatically switch to Dashboard tab so user can see imported data immediately
+                    switchTab('dashboard');
+                } catch (e) {
+                    console.error('confirmImport error:', e);
+                    alert('匯入發生錯誤：' + e);
                 }
-
-                // Auto refresh all data tables
-                await loadStats();
-                await loadOvertime();
-                await loadLeaves();
-
-                // Automatically switch to Dashboard tab so user can see imported data immediately
-                switchTab('dashboard');
-            } catch (e) {
-                console.error('confirmImport error:', e);
-                alert('匯入發生錯誤：' + e);
-            }
+            });
         }
 
         // ASW Format Export Functions
@@ -2132,19 +2269,21 @@
         }
 
         function openLocationHistEditModal(id) {
-            const h = locationHistoriesCache.find(x => x.id === id);
-            if (!h) return;
-            document.getElementById('editHistId').value = h.id;
-            
-            const nameSelect = document.getElementById('editHistMemberName');
-            nameSelect.innerHTML = `<option value="${h.name}">${h.name}</option>`;
-            nameSelect.value = h.name;
-            
-            document.getElementById('editHistStartDate').value = h.start_date || '';
-            document.getElementById('editHistEndDate').value = h.end_date || '';
-            document.getElementById('editHistLocation').value = h.location || '台灣辦公室';
+            ensureAdminUnlocked(() => {
+                const h = locationHistoriesCache.find(x => x.id === id);
+                if (!h) return;
+                document.getElementById('editHistId').value = h.id;
+                
+                const nameSelect = document.getElementById('editHistMemberName');
+                nameSelect.innerHTML = `<option value="${h.name}">${h.name}</option>`;
+                nameSelect.value = h.name;
+                
+                document.getElementById('editHistStartDate').value = h.start_date || '';
+                document.getElementById('editHistEndDate').value = h.end_date || '';
+                document.getElementById('editHistLocation').value = h.location || '台灣辦公室';
 
-            document.getElementById('locationHistEditModal').classList.add('show');
+                document.getElementById('locationHistEditModal').classList.add('show');
+            });
         }
 
         function closeLocationHistEditModal() {
@@ -2166,7 +2305,7 @@
 
             const res = await fetch(`/api/members/locations/${id}`, {
                 method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
+                headers: getAuthHeaders(),
                 body: JSON.stringify({ name, start_date, end_date, location })
             });
 
@@ -2184,106 +2323,127 @@
         }
 
         // Add Location History
-        async function addLocationHistory() {
-            const nameSelect = document.getElementById('histMemberName');
-            const startDateInput = document.getElementById('histStartDate');
-            const endDateInput = document.getElementById('histEndDate');
-            const locSelect = document.getElementById('histLocation');
+        function addLocationHistory() {
+            ensureAdminUnlocked(async () => {
+                const nameSelect = document.getElementById('histMemberName');
+                const startDateInput = document.getElementById('histStartDate');
+                const endDateInput = document.getElementById('histEndDate');
+                const locSelect = document.getElementById('histLocation');
 
-            const name = nameSelect ? nameSelect.value : '';
-            const start_date = startDateInput.value.trim();
-            const end_date = endDateInput.value.trim();
-            const location = locSelect ? locSelect.value : '台灣辦公室';
+                const name = nameSelect ? nameSelect.value : '';
+                const start_date = startDateInput.value.trim();
+                const end_date = endDateInput.value.trim();
+                const location = locSelect ? locSelect.value : '台灣辦公室';
 
-            if (!name || !start_date || !location) {
-                alert('請選擇姓名、填寫開始日期與地點！');
-                return;
-            }
+                if (!name || !start_date || !location) {
+                    alert('請選擇姓名、填寫開始日期與地點！');
+                    return;
+                }
 
-            const res = await fetch('/api/members/locations', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ name, start_date, end_date, location })
+                const res = await fetch('/api/members/locations', {
+                    method: 'POST',
+                    headers: getAuthHeaders(),
+                    body: JSON.stringify({ name, start_date, end_date, location })
+                });
+
+                if (res.ok) {
+                    showToast(`已新增駐點履歷：${name} (${start_date} 起 在 ${location})`);
+                    startDateInput.value = '';
+                    endDateInput.value = '';
+                    await refreshMemberLocationMap();
+                    await loadLocationHistories();
+                    await loadOvertime();
+                    await loadStats();
+                } else {
+                    const err = await res.json();
+                    alert(err.message || '新增失敗');
+                }
             });
-
-            if (res.ok) {
-                showToast(`已新增駐點履歷：${name} (${start_date} 起 在 ${location})`);
-                startDateInput.value = '';
-                endDateInput.value = '';
-                await refreshMemberLocationMap();
-                await loadLocationHistories();
-                await loadOvertime();
-                await loadStats();
-            } else {
-                const err = await res.json();
-                alert(err.message || '新增失敗');
-            }
         }
 
         // Delete Location History
-        async function deleteLocationHistory(id) {
-            if (!confirm('確定要刪除此駐點區間履歷嗎？')) return;
-            await fetch(`/api/members/locations/${id}`, { method: 'DELETE' });
-            showToast('已刪除駐點區間履歷');
-            await refreshMemberLocationMap();
-            await loadLocationHistories();
-            await loadOvertime();
-            await loadStats();
+        function deleteLocationHistory(id) {
+            ensureAdminUnlocked(async () => {
+                if (!confirm('確定要刪除此駐點區間履歷嗎？')) return;
+                const res = await fetch(`/api/members/locations/${id}`, { method: 'DELETE', headers: getAuthHeaders() });
+                if (res.ok) {
+                    showToast('已刪除駐點區間履歷');
+                    await refreshMemberLocationMap();
+                    await loadLocationHistories();
+                    await loadOvertime();
+                    await loadStats();
+                } else {
+                    const err = await res.json();
+                    alert(err.message || '刪除失敗');
+                }
+            });
         }
 
         // Update Member Location
-        async function updateMemberLocation(id, location) {
-            const res = await fetch(`/api/members/${id}/location`, {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ location })
+        function updateMemberLocation(id, location) {
+            ensureAdminUnlocked(async () => {
+                const res = await fetch(`/api/members/${id}/location`, {
+                    method: 'PUT',
+                    headers: getAuthHeaders(),
+                    body: JSON.stringify({ location })
+                });
+                if (res.ok) {
+                    showToast(`已更新駐點地點：${location}`);
+                    await loadMembers();
+                    await loadOvertime();
+                } else {
+                    const err = await res.json();
+                    alert(err.message || '更新失敗');
+                }
             });
-            if (res.ok) {
-                showToast(`已更新駐點地點：${location}`);
-                await loadMembers();
-                await loadOvertime();
-            } else {
-                alert('更新失敗');
-            }
         }
 
         // Add Member
-        async function addMember() {
-            const input = document.getElementById('newMemberName');
-            const locSelect = document.getElementById('newMemberLocation');
-            const name = input.value.trim();
-            const location = locSelect ? locSelect.value : '台灣辦公室';
+        function addMember() {
+            ensureAdminUnlocked(async () => {
+                const input = document.getElementById('newMemberName');
+                const locSelect = document.getElementById('newMemberLocation');
+                const name = input.value.trim();
+                const location = locSelect ? locSelect.value : '台灣辦公室';
 
-            if (!name) {
-                alert('請輸入成員姓名');
-                return;
-            }
+                if (!name) {
+                    alert('請輸入成員姓名');
+                    return;
+                }
 
-            const res = await fetch('/api/members', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ name, location })
+                const res = await fetch('/api/members', {
+                    method: 'POST',
+                    headers: getAuthHeaders(),
+                    body: JSON.stringify({ name, location })
+                });
+
+                if (res.ok) {
+                    showToast(`已新增成員：${name} (${location})`);
+                    input.value = '';
+                    await loadMembers();
+                    await loadOvertime();
+                } else {
+                    const err = await res.json();
+                    alert(err.message || '新增失敗');
+                }
             });
-
-            if (res.ok) {
-                showToast(`已新增成員：${name} (${location})`);
-                input.value = '';
-                await loadMembers();
-                await loadOvertime();
-            } else {
-                const err = await res.json();
-                alert(err.message || '新增失敗');
-            }
         }
 
         // Delete Member
-        async function deleteMember(id) {
-            if (!confirm('確定要刪除此成員及其相關紀錄嗎？')) return;
-            await fetch(`/api/members/${id}`, { method: 'DELETE' });
-            showToast('已刪除成員及其相關紀錄');
-            await loadMembers();
-            await loadOvertime();
-            await loadStats();
+        function deleteMember(id) {
+            ensureAdminUnlocked(async () => {
+                if (!confirm('確定要刪除此成員及其相關紀錄嗎？')) return;
+                const res = await fetch(`/api/members/${id}`, { method: 'DELETE', headers: getAuthHeaders() });
+                if (res.ok) {
+                    showToast('已刪除成員及其相關紀錄');
+                    await loadMembers();
+                    await loadOvertime();
+                    await loadStats();
+                } else {
+                    const err = await res.json();
+                    alert(err.message || '刪除失敗');
+                }
+            });
         }
 
         // Export CSV
@@ -2295,6 +2455,7 @@
         // Startup
         document.addEventListener('DOMContentLoaded', async () => {
             initMonthSelector();
+            updateAdminAuthUI();
             await refreshMemberLocationMap();  // 預先載入成員駐點資料，讓匯入預覽規則驗證正確
             loadStats();
         });
