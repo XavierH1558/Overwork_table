@@ -3,8 +3,19 @@ import os
 from datetime import datetime
 import parser
 
-DB_DIR = os.environ.get('DATA_DIR', os.path.dirname(__file__))
-os.makedirs(DB_DIR, exist_ok=True)
+DB_DIR = os.environ.get('DATA_DIR', '').strip()
+if DB_DIR:
+    try:
+        os.makedirs(DB_DIR, exist_ok=True)
+        test_file = os.path.join(DB_DIR, '.perm_test')
+        with open(test_file, 'w') as f:
+            f.write('1')
+        os.remove(test_file)
+    except Exception:
+        DB_DIR = os.path.dirname(__file__)
+else:
+    DB_DIR = os.path.dirname(__file__)
+
 DB_PATH = os.path.join(DB_DIR, 'attendance.db')
 
 def get_connection():
