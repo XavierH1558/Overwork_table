@@ -283,6 +283,16 @@ def get_leaves():
     records = database.get_leave_records(month=month, name=name, leave_types=leave_types, search=search)
     return jsonify(records)
 
+@app.route('/api/leaves/<int:rec_id>', methods=['GET'])
+def get_leave_by_id(rec_id):
+    with database.get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute('SELECT * FROM leave_records WHERE id=?', (rec_id,))
+        row = cursor.fetchone()
+    if not row:
+        return jsonify({"status": "error", "message": "找不到紀錄"}), 404
+    return jsonify(dict(row))
+
 @app.route('/api/leaves', methods=['POST'])
 def add_leave():
     if not is_admin_authorized():

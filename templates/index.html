@@ -1561,6 +1561,7 @@
                     <td>${r.google_comp_days > 0 ? `${r.google_comp_days} 天` : '-'}</td>
                     <td>${r.reason || '-'}</td>
                     <td>
+                        <button class="action-btn" onclick="openLeaveEditModal(${r.id})"><i class="fa-solid fa-pen-to-square"></i> 編輯</button>
                         <button class="action-btn delete" onclick="deleteLeave(${r.id})"><i class="fa-solid fa-trash"></i></button>
                     </td>
                 `;
@@ -1943,6 +1944,32 @@
             });
         }
 
+        // Open Leave Edit Modal for saved DB records
+        function openLeaveEditModal(recId) {
+            ensureAdminUnlocked(async () => {
+                const res = await fetch(`/api/leaves/${recId}`);
+                const r = await res.json();
+
+                editingRecordState = { type: 'edit_leave_db', id: recId };
+                document.getElementById('modalTitleText').innerHTML = `<i class="fa-solid fa-pen-to-square" style="color: var(--primary);"></i> 編輯請假紀錄`;
+
+                document.getElementById('modalDate').value = r.date || '';
+                document.getElementById('modalName').value = r.name || '';
+                document.getElementById('modalReason').value = r.reason || '';
+
+                document.getElementById('modalTimeGroup').style.display = 'none';
+                document.getElementById('modalHoursGroup').style.display = 'none';
+                document.getElementById('modalLeaveTypeGroup').style.display = 'flex';
+                document.getElementById('modalDurationGroup').style.display = 'flex';
+                document.getElementById('modalSpecialGroup').style.display = 'none';
+
+                document.getElementById('modalLeaveType').value = r.leave_type || '黑假';
+                document.getElementById('modalDuration').value = r.duration || '1天';
+
+                document.getElementById('editPreviewModal').classList.add('show');
+            });
+        }
+
         // Save Edit Modal
         async function saveEditModal() {
             const { type, index, id } = editingRecordState;
@@ -1954,6 +1981,29 @@
 
             if (!date || !name) {
                 alert('請填寫日期與姓名！');
+                return;
+            }
+
+            if (type === 'edit_leave_db') {
+                // Editing a saved DB leave record
+                const leave_type = document.getElementById('modalLeaveType').value;
+                const duration = document.getElementById('modalDuration').value;
+                const google_comp_days = (leave_type === '黑假' || leave_type === 'WFH') ? (duration === '0.5天' ? 0.5 : 1.0) : 0.0;
+
+                const res = await fetch(`/api/leaves/${id}`, {
+                    method: 'PUT',
+                    headers: getAuthHeaders(),
+                    body: JSON.stringify({ date, name, leave_type, duration, google_comp_days, reason })
+                });
+                if (res.ok) {
+                    showToast('已更新請假紀錄');
+                    closeEditModal();
+                    loadLeaves();
+                    loadStats();
+                } else {
+                    const err = await res.json();
+                    alert(err.message || '更新失敗');
+                }
                 return;
             }
 
