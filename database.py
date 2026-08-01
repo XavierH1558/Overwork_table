@@ -3,7 +3,9 @@ import os
 from datetime import datetime
 import parser
 
-DB_PATH = os.path.join(os.path.dirname(__file__), 'attendance.db')
+DB_DIR = os.environ.get('DATA_DIR', os.path.dirname(__file__))
+os.makedirs(DB_DIR, exist_ok=True)
+DB_PATH = os.path.join(DB_DIR, 'attendance.db')
 
 def get_connection():
     conn = sqlite3.connect(DB_PATH)
@@ -52,16 +54,43 @@ def init_db():
             CREATE TABLE IF NOT EXISTS team_members (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 name TEXT UNIQUE NOT NULL,
+                location TEXT DEFAULT '台灣辦公室',
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         ''')
         
+        # Check if location column exists for existing table
+        cursor.execute("PRAGMA table_info(team_members)")
+        cols = [r[1] for r in cursor.fetchall()]
+        if 'location' not in cols:
+            cursor.execute("ALTER TABLE team_members ADD COLUMN location TEXT DEFAULT '台灣辦公室'")
+
+        # Check if is_special / special_reason columns exist in overtime_records
+        cursor.execute("PRAGMA table_info(overtime_records)")
+        ot_cols = [r[1] for r in cursor.fetchall()]
+        if 'is_special' not in ot_cols:
+            cursor.execute("ALTER TABLE overtime_records ADD COLUMN is_special INTEGER DEFAULT 0")
+        if 'special_reason' not in ot_cols:
+            cursor.execute("ALTER TABLE overtime_records ADD COLUMN special_reason TEXT DEFAULT ''")
+
+        # Member location history table (date-range based location)
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS member_location_history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                start_date TEXT NOT NULL,
+                end_date TEXT,
+                location TEXT NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+
         # Populate initial default members if table is empty
         cursor.execute('SELECT COUNT(*) FROM team_members')
         if cursor.fetchone()[0] == 0:
             default_members = ["Benny", "Daniel", "Eden", "YiWen", "Xavier", "Winnie", "Kevin", "Cora", "Benson", "Jim", "Rell"]
             for m in default_members:
-                cursor.execute('INSERT OR IGNORE INTO team_members (name) VALUES (?)', (m,))
+                cursor.execute('INSERT OR IGNORE INTO team_members (name, location) VALUES (?, ?)', (m, '台灣辦公室'))
 
         conn.commit()
 
@@ -69,25 +98,139 @@ def init_db():
 def get_all_members():
     with get_connection() as conn:
         cursor = conn.cursor()
-        cursor.execute('SELECT id, name FROM team_members ORDER BY name ASC')
+        cursor.execute('SELECT id, name, COALESCE(location, "台灣辦公室") as location FROM team_members ORDER BY name ASC')
         rows = cursor.fetchall()
         return [dict(r) for r in rows]
 
 
-def add_member(name):
+def get_member_location_map():
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute('SELECT name, COALESCE(location, "台灣辦公室") as location FROM team_members')
+        rows = cursor.fetchall()
+        return {r['name']: r['location'] for r in rows}
+
+
+def normalize_date_fmt(d_str):
+    if not d_str or not str(d_str).strip():
+        return ""
+    st = str(d_str).strip().replace('-', '/')
+    if len(st) == 8 and st.isdigit():
+        return f"{st[:4]}/{st[4:6]}/{st[6:]}"
+    parts = st.split('/')
+    if len(parts) == 3:
+        try:
+            return f"{int(parts[0]):04d}/{int(parts[1]):02d}/{int(parts[2]):02d}"
+        except Exception:
+            return st
+    return st
+
+
+def get_all_member_location_histories(name=None):
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        if name and name.strip():
+            cursor.execute('SELECT * FROM member_location_history WHERE LOWER(name)=LOWER(?) ORDER BY start_date ASC, id ASC', (name.strip(),))
+        else:
+            cursor.execute('SELECT * FROM member_location_history ORDER BY name ASC, start_date ASC, id ASC')
+        return [dict(r) for r in cursor.fetchall()]
+
+
+def add_member_location_history(name, start_date, end_date, location):
+    name = name.strip()
+    start_date = normalize_date_fmt(start_date)
+    end_date = normalize_date_fmt(end_date) if end_date and end_date.strip() else None
+    location = location.strip()
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            INSERT INTO member_location_history (name, start_date, end_date, location)
+            VALUES (?, ?, ?, ?)
+        ''', (name, start_date, end_date, location))
+        conn.commit()
+        return cursor.lastrowid
+
+
+def delete_member_location_history(history_id):
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute('DELETE FROM member_location_history WHERE id=?', (history_id,))
+        conn.commit()
+
+
+def update_member_location_history(history_id, name, start_date, end_date, location):
+    name = name.strip()
+    start_date = normalize_date_fmt(start_date)
+    end_date = normalize_date_fmt(end_date) if end_date and end_date.strip() else None
+    location = location.strip()
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            UPDATE member_location_history
+            SET name=?, start_date=?, end_date=?, location=?
+            WHERE id=?
+        ''', (name, start_date, end_date, location, history_id))
+        conn.commit()
+
+
+def get_member_location_at_date(name, date_str):
+    if not name or not date_str:
+        return '台灣辦公室'
+    d_clean = normalize_date_fmt(date_str)
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        # Check history table for matching date range
+        cursor.execute('''
+            SELECT location FROM member_location_history
+            WHERE LOWER(name) = LOWER(?)
+              AND start_date <= ?
+              AND (end_date IS NULL OR end_date = '' OR end_date >= ?)
+            ORDER BY start_date DESC, id DESC
+            LIMIT 1
+        ''', (name.strip(), d_clean, d_clean))
+        row = cursor.fetchone()
+        if row and row['location']:
+            return row['location']
+        
+        # Fallback to default location in team_members
+        cursor.execute('SELECT COALESCE(location, "台灣辦公室") as location FROM team_members WHERE LOWER(name)=LOWER(?)', (name.strip(),))
+        row = cursor.fetchone()
+        if row and row['location']:
+            return row['location']
+            
+    return '台灣辦公室'
+
+
+
+def add_member(name, location='台灣辦公室'):
     name = name.strip()
     if not name:
         return None
+    if not location:
+        location = '台灣辦公室'
     with get_connection() as conn:
         cursor = conn.cursor()
-        cursor.execute('INSERT OR IGNORE INTO team_members (name) VALUES (?)', (name,))
+        cursor.execute('INSERT OR IGNORE INTO team_members (name, location) VALUES (?, ?)', (name, location))
         conn.commit()
         return cursor.lastrowid
+
+
+def update_member_location(member_id, location):
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute('UPDATE team_members SET location=? WHERE id=?', (location, member_id))
+        conn.commit()
 
 
 def delete_member(member_id):
     with get_connection() as conn:
         cursor = conn.cursor()
+        cursor.execute('SELECT name FROM team_members WHERE id=?', (member_id,))
+        row = cursor.fetchone()
+        if row:
+            m_name = row['name']
+            cursor.execute('DELETE FROM overtime_records WHERE LOWER(name)=LOWER(?)', (m_name,))
+            cursor.execute('DELETE FROM leave_records WHERE LOWER(name)=LOWER(?)', (m_name,))
         cursor.execute('DELETE FROM team_members WHERE id=?', (member_id,))
         conn.commit()
 
@@ -104,8 +247,7 @@ def parse_ym(date_str):
 
 
 def add_overtime_record(date, name, time_str, hours, reason, note=None, eval_hours=None):
-    if note is None or note == "":
-        note = parser.get_weekday_note(date)
+    note = parser.get_weekday_note(date)
     if eval_hours is None:
         eval_hours = hours
     y, m = parse_ym(date)
@@ -134,45 +276,88 @@ def add_leave_record(date, name, leave_type, duration, google_comp_days, reason)
 
 def bulk_insert(overtime_list, leave_list):
     inserted_ot_count = 0
+    updated_ot_count = 0
     inserted_lv_count = 0
+    updated_lv_count = 0
+
     with get_connection() as conn:
         cursor = conn.cursor()
         for ot in overtime_list:
-            # Check if record with same date, name, and time already exists
+            y, m = parse_ym(ot['date'])
+            eval_h = ot.get('eval_hours', ot['hours'])
+            is_special = int(bool(ot.get('is_special', 0)))
+            special_reason = ot.get('special_reason', '') or ''
+            if is_special:
+                note = '假日加班'
+            else:
+                note = ot.get('note') or parser.get_weekday_note(ot['date'])
+
+            # Check if record for same date and name already exists
             cursor.execute('''
                 SELECT id FROM overtime_records 
-                WHERE date=? AND LOWER(name)=LOWER(?) AND time=?
-            ''', (ot['date'], ot['name'], ot['time']))
-            if cursor.fetchone() is not None:
-                continue
+                WHERE date=? AND LOWER(name)=LOWER(?)
+                ORDER BY id ASC
+            ''', (ot['date'], ot['name']))
+            existing_rows = cursor.fetchall()
 
-            y, m = parse_ym(ot['date'])
-            note = ot.get('note') or parser.get_weekday_note(ot['date'])
-            eval_h = ot.get('eval_hours', ot['hours'])
-            cursor.execute('''
-                INSERT INTO overtime_records (date, name, time, hours, reason, note, eval_hours, year, month)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ''', (ot['date'], ot['name'], ot['time'], ot['hours'], ot['reason'], note, eval_h, y, m))
-            inserted_ot_count += 1
-            
+            if existing_rows:
+                # Update first existing record
+                first_id = existing_rows[0]['id']
+                cursor.execute('''
+                    UPDATE overtime_records
+                    SET date=?, name=?, time=?, hours=?, reason=?, note=?, eval_hours=?, year=?, month=?, is_special=?, special_reason=?
+                    WHERE id=?
+                ''', (ot['date'], ot['name'], ot['time'], ot['hours'], ot['reason'], note, eval_h, y, m, is_special, special_reason, first_id))
+                updated_ot_count += 1
+
+                # Clean up any extra duplicate records for the same date & person
+                if len(existing_rows) > 1:
+                    extra_ids = [r['id'] for r in existing_rows[1:]]
+                    placeholders = ','.join(['?'] * len(extra_ids))
+                    cursor.execute(f'DELETE FROM overtime_records WHERE id IN ({placeholders})', extra_ids)
+            else:
+                # Insert new record
+                cursor.execute('''
+                    INSERT INTO overtime_records (date, name, time, hours, reason, note, eval_hours, year, month, is_special, special_reason)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ''', (ot['date'], ot['name'], ot['time'], ot['hours'], ot['reason'], note, eval_h, y, m, is_special, special_reason))
+                inserted_ot_count += 1
+
         for lv in leave_list:
-            # Check if record with same date, name, and leave_type already exists
+            y, m = parse_ym(lv['date'])
+            # Check if record for same date, name, and leave_type already exists
             cursor.execute('''
                 SELECT id FROM leave_records 
                 WHERE date=? AND LOWER(name)=LOWER(?) AND leave_type=?
+                ORDER BY id ASC
             ''', (lv['date'], lv['name'], lv['leave_type']))
-            if cursor.fetchone() is not None:
-                continue
+            existing_rows = cursor.fetchall()
 
-            y, m = parse_ym(lv['date'])
-            cursor.execute('''
-                INSERT INTO leave_records (date, name, leave_type, duration, google_comp_days, reason, year, month)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            ''', (lv['date'], lv['name'], lv['leave_type'], lv['duration'], lv['google_comp_days'], lv['reason'], y, m))
-            inserted_lv_count += 1
-            
+            if existing_rows:
+                first_id = existing_rows[0]['id']
+                cursor.execute('''
+                    UPDATE leave_records
+                    SET date=?, name=?, leave_type=?, duration=?, google_comp_days=?, reason=?, year=?, month=?
+                    WHERE id=?
+                ''', (lv['date'], lv['name'], lv['leave_type'], lv['duration'], lv['google_comp_days'], lv['reason'], y, m, first_id))
+                updated_lv_count += 1
+
+                if len(existing_rows) > 1:
+                    extra_ids = [r['id'] for r in existing_rows[1:]]
+                    placeholders = ','.join(['?'] * len(extra_ids))
+                    cursor.execute(f'DELETE FROM leave_records WHERE id IN ({placeholders})', extra_ids)
+            else:
+                cursor.execute('''
+                    INSERT INTO leave_records (date, name, leave_type, duration, google_comp_days, reason, year, month)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                ''', (lv['date'], lv['name'], lv['leave_type'], lv['duration'], lv['google_comp_days'], lv['reason'], y, m))
+                inserted_lv_count += 1
+
         conn.commit()
-    return inserted_ot_count, inserted_lv_count
+
+    total_ot = inserted_ot_count + updated_ot_count
+    total_lv = inserted_lv_count + updated_lv_count
+    return total_ot, total_lv
 
 
 def get_overtime_records(month=None, name=None, search=None, ot_type=None):
@@ -214,6 +399,66 @@ def get_overtime_records(month=None, name=None, search=None, ot_type=None):
         return [dict(r) for r in rows]
 
 
+def get_asw_export_data(month=None):
+    if not month:
+        month = "2026/07"
+    records = get_overtime_records(month=month)
+    
+    m_clean = month.replace('/', '-')
+    parts = m_clean.split('-')
+    if len(parts) == 2:
+        m_clean = f"{parts[0]}-{int(parts[1]):02d}"
+    title = f"ASW_加班補休時數管控申請表_{m_clean}"
+
+    members_map = {}
+    for r in records:
+        name = r['name']
+        if name not in members_map:
+            members_map[name] = []
+        members_map[name].append(r)
+
+    sorted_names = sorted(members_map.keys())
+
+    rows = []
+    total_hours = 0.0
+
+    for name in sorted_names:
+        m_recs = sorted(members_map[name], key=lambda x: x['date'])
+        
+        for r in m_recs:
+            d_parts = r['date'].replace('-', '/').split('/')
+            if len(d_parts) == 3:
+                d_fmt = f"{d_parts[0]}/{int(d_parts[1])}/{int(d_parts[2])}"
+            else:
+                d_fmt = r['date']
+
+            is_sp = bool(r.get('is_special'))
+            note_val = r.get('note') or ('假日加班' if is_sp else '平日加班')
+            
+            h = float(r['hours'] or 0.0)
+            h_fmt = int(h) if h.is_integer() else h
+            total_hours += h
+
+            rows.append({
+                "date": d_fmt,
+                "name": r['name'],
+                "time": r['time'],
+                "hours": h_fmt,
+                "reason": r['reason'],
+                "note": note_val,
+                "eval_hours": h_fmt,
+                "is_empty": False
+            })
+
+        # Empty line separator between members
+        rows.append({
+            "date": "", "name": "", "time": "", "hours": "", "reason": "", "note": "", "eval_hours": "",
+            "is_empty": True
+        })
+
+    return title, rows, round(total_hours, 2)
+
+
 def get_leave_records(month=None, name=None, leave_types=None, search=None):
     with get_connection() as conn:
         cursor = conn.cursor()
@@ -252,17 +497,22 @@ def get_leave_records(month=None, name=None, leave_types=None, search=None):
         return [dict(r) for r in rows]
 
 
-def update_overtime_record(rec_id, date, name, time_str, hours, reason, note, eval_hours):
+def update_overtime_record(rec_id, date, name, time_str, hours, reason, note, eval_hours, is_special=0, special_reason=''):
     y, m = parse_ym(date)
-    if not note or note == "":
+    is_special_int = int(bool(is_special))
+    if is_special_int:
+        note = '假日加班'
+    elif not note or note == "":
         note = parser.get_weekday_note(date)
     with get_connection() as conn:
         cursor = conn.cursor()
         cursor.execute('''
             UPDATE overtime_records
-            SET date=?, name=?, time=?, hours=?, reason=?, note=?, eval_hours=?, year=?, month=?
+            SET date=?, name=?, time=?, hours=?, reason=?, note=?, eval_hours=?, year=?, month=?,
+                is_special=?, special_reason=?
             WHERE id=?
-        ''', (date, name, time_str, hours, reason, note, eval_hours, y, m, rec_id))
+        ''', (date, name, time_str, hours, reason, note, eval_hours, y, m,
+              is_special_int, special_reason or '', rec_id))
         conn.commit()
 
 
@@ -316,33 +566,95 @@ def get_monthly_stats(month=None):
                 m_clause = " AND date LIKE ?"
                 m_params = [f"{m_clean}%"]
 
-        # 1. Get list of all distinct names across both tables
-        query_names = f'''
-            SELECT DISTINCT name FROM (
-                SELECT name FROM overtime_records WHERE 1=1 {m_clause}
-                UNION
-                SELECT name FROM leave_records WHERE 1=1 {m_clause}
-            ) ORDER BY name ASC
-        '''
-        cursor.execute(query_names, m_params + m_params)
-        names = [r[0] for r in cursor.fetchall()]
+        # 1. Get list of active team members
+        db_members = get_all_members()
+        names = [m['name'] for m in db_members]
         
-        # Fallback names list if database is empty
+        # Fallback: distinct names from records if team_members table is empty
         if not names:
-            db_m = get_all_members()
-            names = [m['name'] for m in db_m]
+            query_names = f'''
+                SELECT DISTINCT name FROM (
+                    SELECT name FROM overtime_records WHERE 1=1 {m_clause}
+                    UNION
+                    SELECT name FROM leave_records WHERE 1=1 {m_clause}
+                ) ORDER BY name ASC
+            '''
+            cursor.execute(query_names, m_params + m_params)
+            names = [r[0] for r in cursor.fetchall()]
 
         stats_list = []
         team_total_hours = 0.0
+        team_weekday_hours = 0.0
+        team_weekend_hours = 0.0
         
         for name in names:
-            # Overtime total
-            ot_query = f"SELECT SUM(hours) FROM overtime_records WHERE LOWER(name) = LOWER(?){m_clause}"
+            # Overtime breakdown: query all overtime records for this member
+            ot_query = f"SELECT date, hours, note, is_special, special_reason, reason FROM overtime_records WHERE LOWER(name) = LOWER(?){m_clause}"
             ot_params = [name] + m_params
             cursor.execute(ot_query, ot_params)
-            res = cursor.fetchone()
-            ot_hours = round(res[0] or 0.0, 2)
+            ot_rows = cursor.fetchall()
+            
+            ot_count = len(ot_rows)
+            weekday_ot_hours = 0.0
+            weekend_ot_hours = 0.0
+            special_ot_count = 0
+            special_reasons_list = []
+            
+            location_ot_summary = {}
+
+            for r in ot_rows:
+                h = float(r['hours'] or 0.0)
+                is_sp = bool(r['is_special'])
+                sp_reason = (r['special_reason'] or '').strip()
+                gen_reason = (r['reason'] or '').strip()
+                note = r['note'] or ''
+                r_date = r['date']
+                
+                loc = get_member_location_at_date(name, r_date)
+                if loc not in location_ot_summary:
+                    location_ot_summary[loc] = {
+                        "ot_count": 0,
+                        "weekday_hours": 0.0,
+                        "weekend_hours": 0.0,
+                        "total_hours": 0.0
+                    }
+                location_ot_summary[loc]["ot_count"] += 1
+                location_ot_summary[loc]["total_hours"] += h
+
+                if is_sp or note == '假日加班':
+                    weekend_ot_hours += h
+                    location_ot_summary[loc]["weekend_hours"] += h
+                    if is_sp:
+                        special_ot_count += 1
+                        special_reasons_list.append(sp_reason or gen_reason or '特殊狀況')
+                else:
+                    weekday_ot_hours += h
+                    location_ot_summary[loc]["weekday_hours"] += h
+
+            ot_hours = weekday_ot_hours + weekend_ot_hours
             team_total_hours += ot_hours
+            team_weekday_hours += weekday_ot_hours
+            team_weekend_hours += weekend_ot_hours
+
+            # If no overtime records, query default location for member in that month
+            if not location_ot_summary:
+                curr_loc = get_member_location_at_date(name, f"{month or '2026/07'}/15")
+                location_ot_summary[curr_loc] = {
+                    "ot_count": 0,
+                    "weekday_hours": 0.0,
+                    "weekend_hours": 0.0,
+                    "total_hours": 0.0
+                }
+
+            location_breakdown = []
+            for loc_name, loc_data in location_ot_summary.items():
+                location_breakdown.append({
+                    "location": loc_name,
+                    "ot_count": loc_data["ot_count"],
+                    "weekday_hours": round(loc_data["weekday_hours"], 2),
+                    "weekend_hours": round(loc_data["weekend_hours"], 2),
+                    "total_hours": round(loc_data["total_hours"], 2)
+                })
 
             # Leaves details
             lv_query = f"SELECT leave_type, duration, google_comp_days FROM leave_records WHERE LOWER(name) = LOWER(?){m_clause}"
@@ -357,6 +669,7 @@ def get_monthly_stats(month=None):
             business_count = 0
             google_comp_total = 0.0
             
+            leave_summary = {}
             for l in leaves:
                 lt = l['leave_type']
                 dur_str = str(l['duration'])
@@ -364,6 +677,11 @@ def get_monthly_stats(month=None):
                 comp = l['google_comp_days'] or 0.0
                 
                 google_comp_total += comp
+                
+                if lt not in leave_summary:
+                    leave_summary[lt] = {'days': 0.0, 'count': 0}
+                leave_summary[lt]['days'] += dur_val
+                leave_summary[lt]['count'] += 1
                 
                 if lt == '病假':
                     sick_days += dur_val
@@ -376,9 +694,28 @@ def get_monthly_stats(month=None):
                 elif lt == '因公外出':
                     business_count += 1
 
+            leave_breakdown = []
+            for lt, ddata in leave_summary.items():
+                if lt in ['因公外出', '出勤確認']:
+                    label = f"{lt} {ddata['count']}次"
+                else:
+                    d_val = ddata['days']
+                    d_str = f"{int(d_val)}天" if d_val.is_integer() else f"{d_val}天"
+                    label = f"{lt} {d_str}"
+                leave_breakdown.append({"type": lt, "label": label})
+
             stats_list.append({
                 "name": name,
-                "overtime_hours": ot_hours,
+                "location": get_member_location_at_date(name, f"{month or '2026/07'}/15"),
+                "location_breakdown": location_breakdown,
+                "ot_count": ot_count,
+                "leave_count": len(leaves),
+                "weekday_ot_hours": round(weekday_ot_hours, 2),
+                "weekend_ot_hours": round(weekend_ot_hours, 2),
+                "overtime_hours": round(ot_hours, 2),
+                "special_ot_count": special_ot_count,
+                "special_reasons": list(dict.fromkeys(special_reasons_list)),
+                "leave_breakdown": leave_breakdown,
                 "sick_days": sick_days,
                 "personal_days": personal_days,
                 "black_days": black_days,
@@ -389,5 +726,7 @@ def get_monthly_stats(month=None):
 
         return {
             "stats": stats_list,
-            "team_total_hours": round(team_total_hours, 2)
+            "team_total_hours": round(team_total_hours, 2),
+            "team_weekday_hours": round(team_weekday_hours, 2),
+            "team_weekend_hours": round(team_weekend_hours, 2)
         }

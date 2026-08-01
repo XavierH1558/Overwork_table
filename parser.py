@@ -67,6 +67,133 @@ def parse_time_range(time_str):
     return norm_time_str, hours
 
 
+def parse_all_dates(text, default_year=2026):
+    dates = []
+    # 1. Date ranges: e.g. 8/13-8/15 or 8/13~8/15 or 8/13至8/15
+    m_range = re.search(r'(\d{1,2})[/-](\d{1,2})\s*[-~—至]\s*(\d{1,2})[/-](\d{1,2})', text)
+    if m_range:
+        m1, d1, m2, d2 = int(m_range.group(1)), int(m_range.group(2)), int(m_range.group(3)), int(m_range.group(4))
+        if m1 == m2 and d2 >= d1:
+            for d in range(d1, d2 + 1):
+                dates.append(f"{default_year}/{m1:02d}/{d:02d}")
+            return dates
+
+    # 2. Date list with M/D: e.g. 8/13, 8/14, 8/17
+    found_mds = re.findall(r'(\d{1,2})[/-](\d{1,2})', text)
+    if found_mds:
+        for m_str, d_str in found_mds:
+            d_val = f"{default_year}/{int(m_str):02d}/{int(d_str):02d}"
+            if d_val not in dates:
+                dates.append(d_val)
+                
+    if len(found_mds) == 1:
+        sub_text = text[text.find(f"{found_mds[0][0]}/{found_mds[0][1]}"):]
+        extra_days = re.findall(r'[,，、\s]+(\d{1,2})\b', sub_text)
+        for ed in extra_days:
+            ed_val = int(ed)
+            if 1 <= ed_val <= 31:
+                d_val = f"{default_year}/{int(found_mds[0][0]):02d}/{ed_val:02d}"
+                if d_val not in dates:
+                    dates.append(d_val)
+
+    if not dates:
+        found_4d = re.findall(r'\b(0[1-9]|1[0-2])([0-2][0-9]|3[01])\b', text)
+        for m_str, d_str in found_4d:
+            d_val = f"{default_year}/{int(m_str):02d}/{int(d_str):02d}"
+            if d_val not in dates:
+                dates.append(d_val)
+
+    return dates
+
+
+def process_leave_task(task_text, seg_names, fallback_date, default_year=2026):
+    date_list_pattern = r'(\d)\s*[,，]\s*(\d)'
+    protected_text = re.sub(date_list_pattern, r'\1__COMMA__\2', task_text)
+    protected_text = re.sub(date_list_pattern, r'\1__COMMA__\2', protected_text)
+
+    raw_clauses = re.split(r'[,，;；（）\(\)]', protected_text)
+    raw_clauses = [c.replace('__COMMA__', ', ').strip() for c in raw_clauses if c.strip()]
+
+    # Merge continuation clauses (clauses with no leave keyword, no date, and no person name) into previous clause
+    merged_clauses = []
+    for c in raw_clauses:
+        has_kw = any(kw in c or kw.lower() in c.lower() for kw in LEAVE_META.keys())
+        has_dt = len(parse_all_dates(c, default_year)) > 0
+        has_person = any(re.search(r'(?<![a-zA-Z0-9_])' + re.escape(n) + r'(?![a-zA-Z0-9_])', c, re.IGNORECASE) for n in KNOWN_NAMES)
+        
+        if not has_kw and not has_dt and not has_person and merged_clauses:
+            merged_clauses[-1] = merged_clauses[-1] + ' ' + c
+        else:
+            merged_clauses.append(c)
+
+    leave_records = []
+    seen_keys = set()
+    line_fallback_dates = parse_all_dates(task_text, default_year)
+
+    for clause in merged_clauses:
+        matched_kw = None
+        matched_type = None
+        matched_meta = None
+        for kw, meta in LEAVE_META.items():
+            if kw in clause or kw.lower() in clause.lower():
+                matched_kw = kw
+                matched_type = meta["type"]
+                if matched_type == "WFH":
+                    matched_type = "黑假"
+                matched_meta = meta
+                break
+                
+        if matched_type:
+            c_dates = parse_all_dates(clause, default_year)
+            if not c_dates:
+                c_dates = line_fallback_dates if line_fallback_dates else [fallback_date]
+                
+            is_wfh = 'WFH' in clause.upper() or 'ＷＦＨ' in clause or (matched_kw in ['WFH', 'ＷＦＨ'])
+            is_half = '半天' in clause or '0.5' in clause or is_wfh
+            
+            if is_half:
+                duration = "0.5天"
+                comp = 0.5 if (matched_type == "黑假" or is_wfh) else matched_meta["google_comp"]
+            else:
+                duration = "1天"
+                comp = matched_meta["google_comp"]
+
+            clean_reason = clause
+            # Case-insensitive removal of names
+            for person in (KNOWN_NAMES + seg_names):
+                clean_reason = re.sub(r'(?<![a-zA-Z0-9_])' + re.escape(person) + r'(?![a-zA-Z0-9_])', '', clean_reason, flags=re.IGNORECASE)
+            for kw in ["黑假", "病假", "事假", "特休", "生理假", "WFH", "ＷＦＨ", "出勤確認", "未刷卡", "補卡"]:
+                clean_reason = clean_reason.replace(kw, '')
+            clean_reason = re.sub(r'(請|要請|申請|請假|一天|半天|0\.5天|\d+天|\d{1,2}/\d{1,2})', '', clean_reason)
+            clean_reason = re.sub(r'[,，\s]+', ' ', clean_reason).strip()
+            clean_reason = re.sub(r'^[,\s，:\-–—~]+|[,\s，:\-–—~]+$', '', clean_reason).strip()
+            
+            if matched_type == "出勤確認":
+                final_reason = "早上未刷卡，補出勤確認"
+            elif is_wfh and (not clean_reason or clean_reason == "-"):
+                final_reason = "WFH"
+            elif not re.search(r'[\u4e00-\u9fa5a-zA-Z]', clean_reason):
+                final_reason = "WFH" if is_wfh else "-"
+            else:
+                final_reason = f"WFH {clean_reason}" if is_wfh and "WFH" not in clean_reason else clean_reason
+
+            for person in seg_names:
+                for d in c_dates:
+                    rec_key = (d, person.lower(), matched_type)
+                    if rec_key not in seen_keys:
+                        seen_keys.add(rec_key)
+                        leave_records.append({
+                            "date": d,
+                            "name": person,
+                            "leave_type": matched_type,
+                            "duration": duration,
+                            "google_comp_days": comp,
+                            "reason": final_reason
+                        })
+    return leave_records
+
+
+
 def get_weekday_note(date_str):
     """
     Given 'YYYY/M/D' or 'YYYY/MM/DD', calculates weekday.
@@ -86,7 +213,78 @@ def get_weekday_note(date_str):
     return "平日加班"
 
 
-def parse_raw_text(text_block, default_year=2025, known_names=None):
+def validate_ot_rule(time_str, reason="", member_name=None, member_locations=None, date=None, location_histories=None):
+    """
+    Validates overtime start time rules:
+    - Factory Overtime (Farglory, Lab, GDL, or member at factory location):
+      Earliest allowed start = 19:00. Warn if starting before 19:00.
+    - General Overtime (Non-factory):
+      Earliest allowed start = 20:00. Warn if starting before 20:00
+      (e.g. non-factory member accidentally writing 19:00).
+    Returns: is_valid (bool), warning_msg (str)
+    """
+    if not time_str or '-' not in time_str:
+        return True, ""
+
+    start_part = time_str.split('-')[0].strip().replace(':', '')
+    if len(start_part) == 4 and start_part.isdigit():
+        start_h = int(start_part[:2])
+        start_m = int(start_part[2:])
+        start_fmt = f"{start_h:02d}:{start_m:02d}"
+    elif ':' in time_str.split('-')[0]:
+        parts = time_str.split('-')[0].strip().split(':')
+        try:
+            start_h = int(parts[0])
+            start_m = int(parts[1])
+            start_fmt = f"{start_h:02d}:{start_m:02d}"
+        except Exception:
+            return True, ""
+    else:
+        return True, ""
+
+    start_total = start_h * 60 + start_m
+
+    reason_upper = (reason or "").upper()
+    factory_keywords = ['FARGLORY', 'LAB', 'GDL', '工廠', '實驗室']
+    is_factory_reason = any(kw in reason_upper for kw in factory_keywords)
+
+    factory_locations = ['台灣工廠', '台灣實驗室', '休士頓工廠', '美國LAB', '墨西哥GDL工廠']
+    
+    member_loc = ''
+    if member_name and date and location_histories:
+        from database import normalize_date_fmt
+        d_clean = normalize_date_fmt(date)
+        matching = []
+        for h in location_histories:
+            if h['name'].lower() == member_name.lower():
+                h_start = normalize_date_fmt(h['start_date'])
+                h_end = normalize_date_fmt(h.get('end_date'))
+                if h_start <= d_clean and (not h_end or h_end >= d_clean):
+                    matching.append(h)
+        if matching:
+            matching.sort(key=lambda x: (normalize_date_fmt(x['start_date']), x.get('id', 0)), reverse=True)
+            member_loc = matching[0]['location']
+
+    if not member_loc and member_name:
+        member_loc = (member_locations or {}).get(member_name, '')
+
+    is_factory_location = member_loc in factory_locations
+    is_factory = is_factory_reason or is_factory_location
+
+    if is_factory:
+        # Factory: must NOT start before 19:00
+        if start_total < 19 * 60:
+            loc_label = f" ({member_loc})" if is_factory_location else ""
+            return False, f"工廠加班{loc_label} 起始時間不得早於 19:00，此筆為 {start_fmt}"
+    else:
+        # Non-factory: must NOT start before 20:00
+        if start_total < 20 * 60:
+            return False, f"非工廠加班起始時間不得早於 20:00，此筆為 {start_fmt}（若屬特殊狀況請在編輯中勾選特殊狀況）"
+
+    return True, ""
+
+
+def parse_raw_text(text_block, default_year=2026, known_names=None, member_locations=None):
     """
     Parses unstructured multi-line text input into structured overtime, leave records, and warnings.
     Returns: overtime_records, leave_records, warning_records
@@ -96,11 +294,20 @@ def parse_raw_text(text_block, default_year=2025, known_names=None):
             import database
             db_members = database.get_all_members()
             known_names = [m['name'] for m in db_members]
+            if not member_locations:
+                member_locations = database.get_member_location_map()
         except Exception:
             known_names = KNOWN_NAMES
 
     if not known_names:
         known_names = KNOWN_NAMES
+
+    if member_locations is None:
+        try:
+            import database
+            member_locations = database.get_member_location_map()
+        except Exception:
+            member_locations = {}
 
     overtime_records = []
     leave_records = []
@@ -114,26 +321,29 @@ def parse_raw_text(text_block, default_year=2025, known_names=None):
         if not line:
             continue
             
-        # Check if line starts with a date pattern (e.g. "7/27", "0731", "2025/7/27")
-        date_match = re.match(r'^((\d{4}[/-])?\d{1,2}[/-]\d{1,2}|\b\d{4}\b)', line)
+        # Check if line contains a date pattern (at start or inline like Daniel - **7/13 (Mon)** or 0731)
+        date_match = re.search(r'(?:^|[\*\s\-\(])((\d{4}[/-])?(\d{1,2})[/-](\d{1,2})|\b(0[1-9]|1[0-2])([0-2][0-9]|3[01])\b)(?:\b|\s|\*|\))', line)
         if date_match:
             raw_date = date_match.group(1)
-            rest_of_line = line[len(raw_date):].strip()
-            
+            start_date_match = re.match(r'^((\d{4}[/-])?\d{1,2}[/-]\d{1,2}|\b(0[1-9]|1[0-2])([0-2][0-9]|3[01])\b|\b\d{4}\b)', line)
+            if start_date_match:
+                rest_of_line = line[len(start_date_match.group(1)):].strip()
+            else:
+                rest_of_line = line
+
             if '/' in raw_date or '-' in raw_date:
                 parts = re.split(r'[/-]', raw_date)
                 if len(parts) == 3:
                     y, m, d = int(parts[0]), int(parts[1]), int(parts[2])
                 else:
                     y, m, d = default_year, int(parts[0]), int(parts[1])
+            elif len(raw_date) == 4 and raw_date.isdigit():
+                y = default_year
+                m = int(raw_date[:2])
+                d = int(raw_date[2:])
             else:
-                if len(raw_date) == 4:
-                    y = default_year
-                    m = int(raw_date[:2])
-                    d = int(raw_date[2:])
-                else:
-                    y, m, d = default_year, 1, 1
-                    
+                y, m, d = default_year, 1, 1
+
             current_date = f"{y}/{m:02d}/{d:02d}"
         else:
             rest_of_line = line
@@ -206,60 +416,15 @@ def parse_raw_text(text_block, default_year=2025, known_names=None):
             idx = max(cur_idx + 1, idx + 1)
             
             # Check for leave types
-            detected_leaves = []
-            for kw, meta in LEAVE_META.items():
-                if kw in task_text:
-                    type_name = meta["type"]
-                    if type_name == "WFH":
-                        type_name = "黑假"
-                        duration = "0.5天"
-                        comp = 0.5
-                    else:
-                        duration = "1天"
-                        comp = meta["google_comp"]
-                        if "半天" in task_text or "0.5" in task_text:
-                            duration = "0.5天"
-                            if type_name in ["黑假"]:
-                                comp = 0.5
-
-                    if not any(d["type"] == type_name for d in detected_leaves):
-                        detected_leaves.append({
-                            "type": type_name,
-                            "duration": duration,
-                            "comp": comp
-                        })
-
+            has_leave_kw = any(kw in task_text for kw in LEAVE_META.keys())
+            
             # Check for time range in task_text or inherit line_prefix_time
             time_match = re.search(r'(\d{1,2}:?\d{2}\s*[-~—]\s*\d{1,2}:?\d{2})', task_text)
             raw_time_str = time_match.group(1) if time_match else line_prefix_time
             
-            if detected_leaves:
-                for person in seg_names:
-                    clean_reason = task_text
-                    clean_reason = re.sub(r'(?<![a-zA-Z0-9_])' + re.escape(person) + r'(?![a-zA-Z0-9_])', '', clean_reason, flags=re.IGNORECASE).strip()
-                    if raw_time_str:
-                        clean_reason = clean_reason.replace(raw_time_str, '').strip()
-                    
-                    for kw in ["黑假", "病假", "事假", "特休", "生理假"]:
-                        clean_reason = clean_reason.replace(kw, '')
-                        
-                    clean_reason = re.sub(r'(要請|申請|請假|一天|半天|0\.5天|\d+天)', '', clean_reason).strip()
-                    clean_reason = re.sub(r'^[,\s，:]+|[,\s，:]+$', '', clean_reason).strip()
-
-                    for item in detected_leaves:
-                        if item["type"] == "出勤確認":
-                            final_reason = "早上未刷卡，補出勤確認"
-                        else:
-                            final_reason = clean_reason if clean_reason else "-"
-
-                        leave_records.append({
-                            "date": current_date,
-                            "name": person,
-                            "leave_type": item["type"],
-                            "duration": item["duration"],
-                            "google_comp_days": item["comp"],
-                            "reason": final_reason
-                        })
+            if has_leave_kw:
+                parsed_l_recs = process_leave_task(task_text, seg_names, current_date, default_year)
+                leave_records.extend(parsed_l_recs)
             elif raw_time_str:
                 norm_time, hours = parse_time_range(raw_time_str)
                 
@@ -268,13 +433,24 @@ def parse_raw_text(text_block, default_year=2025, known_names=None):
                     reason = re.sub(r'\b' + re.escape(n) + r'\b', '', reason, flags=re.IGNORECASE)
                 if time_match:
                     reason = reason.replace(time_match.group(1), '').strip()
-                reason = re.sub(r'^[,\s:]+', '', reason)
+                
+                reason = re.sub(r'[\*\s-]*\d{1,2}[/-]\d{1,2}(\s*\([A-Za-z]+\))?[\*\s-]*', ' ', reason)
+                reason = re.sub(r'^\s*:?\s*\d+(\.\d+)?\s*(hrs?|hr|小時|h)?\s*[,，]?', '', reason)
+                reason = re.sub(r'^[,\s，:\-–—\*]+|[,\s，:\-–—\*]+$', '', reason).strip()
                 if not reason:
                     reason = "加班處理公務"
                     
                 note = get_weekday_note(current_date)
                 
                 for person in seg_names:
+                    is_rule_ok, rule_warn_msg = validate_ot_rule(norm_time or raw_time_str, reason, member_name=person, member_locations=member_locations)
+                    if not is_rule_ok:
+                        warning_records.append({
+                            "line": line_idx,
+                            "raw": raw_line,
+                            "reason": f"{person}: {rule_warn_msg}"
+                        })
+                    
                     overtime_records.append({
                         "date": current_date,
                         "name": person,
@@ -282,7 +458,8 @@ def parse_raw_text(text_block, default_year=2025, known_names=None):
                         "hours": hours,
                         "reason": reason,
                         "note": note,
-                        "eval_hours": hours
+                        "eval_hours": hours,
+                        "rule_warning": rule_warn_msg if not is_rule_ok else None
                     })
 
     return overtime_records, leave_records, warning_records

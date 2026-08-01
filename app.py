@@ -24,10 +24,18 @@ def get_members():
 def add_member():
     data = request.json or {}
     name = data.get('name', '')
+    location = data.get('location', '台灣辦公室')
     if not name.strip():
         return jsonify({"status": "error", "message": "姓名不能為空"}), 400
-    rec_id = database.add_member(name)
+    rec_id = database.add_member(name, location)
     return jsonify({"status": "success", "id": rec_id})
+
+@app.route('/api/members/<int:member_id>/location', methods=['PUT'])
+def update_member_location(member_id):
+    data = request.json or {}
+    location = data.get('location', '台灣辦公室')
+    database.update_member_location(member_id, location)
+    return jsonify({"status": "success"})
 
 @app.route('/api/members/<int:member_id>', methods=['DELETE'])
 def delete_member(member_id):
@@ -38,9 +46,11 @@ def delete_member(member_id):
 def parse_logs():
     data = request.json or {}
     text_block = data.get('text', '')
-    default_year = int(data.get('year', 2025))
+    default_year = int(data.get('year', 2026))
+    member_locs = database.get_member_location_map()
+    loc_histories = database.get_all_member_location_histories()
     
-    ot_records, lv_records, warn_records = parser.parse_raw_text(text_block, default_year)
+    ot_records, lv_records, warn_records = parser.parse_raw_text(text_block, default_year, member_locations=member_locs)
     return jsonify({
         "status": "success",
         "overtime_records": ot_records,
@@ -54,14 +64,16 @@ def parse_csv():
         return jsonify({"status": "error", "message": "請上傳 CSV 檔案"}), 400
         
     file = request.files['file']
-    default_year = int(request.form.get('year', 2025))
+    default_year = int(request.form.get('year', 2026))
+    member_locs = database.get_member_location_map()
+    loc_histories = database.get_all_member_location_histories()
     
     try:
         content = file.read().decode('utf-8-sig', errors='ignore')
     except Exception as e:
         return jsonify({"status": "error", "message": f"檔案讀取失敗: {str(e)}"}), 400
         
-    ot_records, lv_records, warn_records = parser.parse_raw_text(content, default_year)
+    ot_records, lv_records, warn_records = parser.parse_raw_text(content, default_year, member_locations=member_locs)
     return jsonify({
         "status": "success",
         "overtime_records": ot_records,
@@ -75,7 +87,9 @@ def parse_image():
         return jsonify({"status": "error", "message": "請上傳圖片檔案"}), 400
         
     file = request.files['file']
-    default_year = int(request.form.get('year', 2025))
+    default_year = int(request.form.get('year', 2026))
+    member_locs = database.get_member_location_map()
+    loc_histories = database.get_all_member_location_histories()
     
     # Save temporary file
     temp_path = os.path.join('/tmp', f'upload_{file.filename}')
@@ -107,7 +121,7 @@ def parse_image():
     if os.path.exists(temp_path):
         os.remove(temp_path)
         
-    ot_records, lv_records, warn_records = parser.parse_raw_text(extracted_text, default_year)
+    ot_records, lv_records, warn_records = parser.parse_raw_text(extracted_text, default_year, member_locations=member_locs)
     return jsonify({
         "status": "success",
         "extracted_text": extracted_text,
@@ -139,7 +153,44 @@ def get_overtime():
     ot_type = request.args.get('ot_type')
     search = request.args.get('search')
     records = database.get_overtime_records(month=month, name=name, search=search, ot_type=ot_type)
+    for r in records:
+        r['location'] = database.get_member_location_at_date(r['name'], r['date'])
     return jsonify(records)
+
+@app.route('/api/members/locations', methods=['GET'])
+def get_member_locations_history():
+    name = request.args.get('name')
+    histories = database.get_all_member_location_histories(name=name)
+    return jsonify(histories)
+
+@app.route('/api/members/locations', methods=['POST'])
+def add_member_location_history_endpoint():
+    data = request.json or {}
+    name = data.get('name')
+    start_date = data.get('start_date')
+    end_date = data.get('end_date')
+    location = data.get('location')
+    if not name or not start_date or not location:
+        return jsonify({"status": "error", "message": "請填寫姓名、開始日期與地點！"}), 400
+    hid = database.add_member_location_history(name, start_date, end_date, location)
+    return jsonify({"status": "success", "id": hid})
+
+@app.route('/api/members/locations/<int:hid>', methods=['DELETE'])
+def delete_member_location_history_endpoint(hid):
+    database.delete_member_location_history(hid)
+    return jsonify({"status": "success"})
+
+@app.route('/api/members/locations/<int:hid>', methods=['PUT'])
+def update_member_location_history_endpoint(hid):
+    data = request.json or {}
+    name = data.get('name')
+    start_date = data.get('start_date')
+    end_date = data.get('end_date')
+    location = data.get('location')
+    if not name or not start_date or not location:
+        return jsonify({"status": "error", "message": "請填寫姓名、開始日期與地點！"}), 400
+    database.update_member_location_history(hid, name, start_date, end_date, location)
+    return jsonify({"status": "success"})
 
 @app.route('/api/overtime', methods=['POST'])
 def add_overtime():
@@ -155,6 +206,16 @@ def add_overtime():
     rec_id = database.add_overtime_record(date, name, time_str, hours, reason, note, eval_hours)
     return jsonify({"status": "success", "id": rec_id})
 
+@app.route('/api/overtime/<int:rec_id>', methods=['GET'])
+def get_overtime_by_id(rec_id):
+    with database.get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute('SELECT * FROM overtime_records WHERE id=?', (rec_id,))
+        row = cursor.fetchone()
+    if not row:
+        return jsonify({"status": "error", "message": "找不到紀錄"}), 404
+    return jsonify(dict(row))
+
 @app.route('/api/overtime/<int:rec_id>', methods=['PUT'])
 def update_overtime(rec_id):
     data = request.json or {}
@@ -165,8 +226,11 @@ def update_overtime(rec_id):
     reason = data.get('reason', '')
     note = data.get('note', '')
     eval_hours = float(data.get('eval_hours', hours))
+    is_special = int(bool(data.get('is_special', False)))
+    special_reason = data.get('special_reason', '')
     
-    database.update_overtime_record(rec_id, date, name, time_str, hours, reason, note, eval_hours)
+    database.update_overtime_record(rec_id, date, name, time_str, hours, reason, note, eval_hours,
+                                    is_special=is_special, special_reason=special_reason)
     return jsonify({"status": "success"})
 
 @app.route('/api/overtime/<int:rec_id>', methods=['DELETE'])
@@ -240,7 +304,40 @@ def export_csv():
     response.headers["Content-Disposition"] = f"attachment; filename={filename}"
     return response
 
+@app.route('/api/asw_export', methods=['GET'])
+def get_asw_export():
+    month = request.args.get('month')
+    title, rows, total_hours = database.get_asw_export_data(month=month)
+    return jsonify({
+        "status": "success",
+        "title": title,
+        "rows": rows,
+        "total_eval_hours": total_hours
+    })
+
+@app.route('/api/asw_export_csv', methods=['GET'])
+def export_asw_csv():
+    month = request.args.get('month')
+    title, rows, total_hours = database.get_asw_export_data(month=month)
+    
+    output = io.StringIO()
+    output.write('\ufeff')
+    writer = csv.writer(output, delimiter='\t')
+    
+    writer.writerow(['Date', 'Name', 'Time', 'Hours', 'Reason', '備註', '時數'])
+    for r in rows:
+        if r.get('is_empty'):
+            writer.writerow([])
+        else:
+            writer.writerow([r['date'], r['name'], r['time'], r['hours'], r['reason'], r['note'], r['eval_hours']])
+    
+    response = Response(output.getvalue(), mimetype='text/tab-separated-values')
+    filename = f"{title}.tsv"
+    response.headers["Content-Disposition"] = f"attachment; filename={filename}"
+    return response
+
 if __name__ == '__main__':
+    port = int(os.environ.get('PORT', 8000))
     print("Starting Overwork Table Server...")
-    print("Please open browser at: http://127.0.0.1:8000")
-    app.run(host='0.0.0.0', port=8000, debug=True)
+    print(f"Please open browser at: http://127.0.0.1:{port}")
+    app.run(host='0.0.0.0', port=port, debug=True)
