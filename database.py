@@ -1,5 +1,6 @@
 import sqlite3
 import os
+import re
 from datetime import datetime
 import parser
 
@@ -371,6 +372,67 @@ def bulk_insert(overtime_list, leave_list):
     return total_ot, total_lv
 
 
+def get_date_search_patterns(search_str):
+    patterns = set()
+    s = search_str.strip()
+    if not s:
+        return patterns, ''
+
+    patterns.add(s)
+    digits_only = re.sub(r'\D', '', s)
+
+    parts = re.split(r'[/.\- ]+', s)
+    if len(parts) == 2:
+        try:
+            m_val, d_val = int(parts[0]), int(parts[1])
+            if 1 <= m_val <= 12 and 1 <= d_val <= 31:
+                patterns.add(f"{m_val:02d}/{d_val:02d}")
+                patterns.add(f"{m_val}/{d_val}")
+                patterns.add(f"{m_val:02d}/{d_val}")
+                patterns.add(f"{m_val}/{d_val:02d}")
+                patterns.add(f"{m_val:02d}-{d_val:02d}")
+                patterns.add(f"{m_val}-{d_val}")
+        except ValueError:
+            pass
+    elif len(parts) == 3:
+        try:
+            y_val, m_val, d_val = int(parts[0]), int(parts[1]), int(parts[2])
+            if 1 <= m_val <= 12 and 1 <= d_val <= 31:
+                patterns.add(f"{y_val}/{m_val:02d}/{d_val:02d}")
+                patterns.add(f"{y_val}/{m_val}/{d_val}")
+                patterns.add(f"{y_val}-{m_val:02d}-{d_val:02d}")
+        except ValueError:
+            pass
+
+    if digits_only:
+        if len(digits_only) == 4:
+            m_val, d_val = int(digits_only[:2]), int(digits_only[2:])
+            if 1 <= m_val <= 12 and 1 <= d_val <= 31:
+                patterns.add(f"{m_val:02d}/{d_val:02d}")
+                patterns.add(f"{m_val}/{d_val}")
+                patterns.add(f"{m_val:02d}/{d_val}")
+                patterns.add(f"{m_val}/{d_val:02d}")
+                patterns.add(f"{m_val:02d}-{d_val:02d}")
+                patterns.add(f"{m_val}-{d_val}")
+        elif len(digits_only) == 3:
+            m_val, d_val = int(digits_only[:1]), int(digits_only[1:])
+            if 1 <= m_val <= 12 and 1 <= d_val <= 31:
+                patterns.add(f"{m_val:02d}/{d_val:02d}")
+                patterns.add(f"{m_val}/{d_val}")
+                patterns.add(f"{m_val:02d}/{d_val}")
+                patterns.add(f"{m_val}/{d_val:02d}")
+                patterns.add(f"{m_val:02d}-{d_val:02d}")
+                patterns.add(f"{m_val}-{d_val}")
+        elif len(digits_only) == 8:
+            y_val, m_val, d_val = int(digits_only[:4]), int(digits_only[4:6]), int(digits_only[6:])
+            if 1 <= m_val <= 12 and 1 <= d_val <= 31:
+                patterns.add(f"{y_val}/{m_val:02d}/{d_val:02d}")
+                patterns.add(f"{y_val}/{m_val}/{d_val}")
+                patterns.add(f"{y_val}-{m_val:02d}-{d_val:02d}")
+
+    return patterns, digits_only
+
+
 def get_overtime_records(month=None, name=None, search=None, ot_type=None):
     with get_connection() as conn:
         cursor = conn.cursor()
@@ -400,9 +462,24 @@ def get_overtime_records(month=None, name=None, search=None, ot_type=None):
             params.append(ot_type.strip())
             
         if search and search.strip():
-            query += " AND (LOWER(name) LIKE ? OR LOWER(reason) LIKE ? OR LOWER(note) LIKE ? OR date LIKE ?)"
-            s_val = f"%{search.strip().lower()}%"
-            params.extend([s_val, s_val, s_val, s_val])
+            s_clean = search.strip().lower()
+            s_val = f"%{s_clean}%"
+            date_patterns, digits_only = get_date_search_patterns(search)
+            
+            conds = ["LOWER(name) LIKE ?", "LOWER(reason) LIKE ?", "LOWER(note) LIKE ?", "date LIKE ?"]
+            s_params = [s_val, s_val, s_val, s_val]
+
+            if digits_only:
+                conds.append("REPLACE(REPLACE(date, '/', ''), '-', '') LIKE ?")
+                s_params.append(f"%{digits_only}%")
+
+            for dp in date_patterns:
+                conds.append("date LIKE ?")
+                s_params.append(f"%{dp}%")
+
+            query += " AND (" + " OR ".join(conds) + ")"
+            params.extend(s_params)
+
             
         query += " ORDER BY date ASC, name ASC"
         cursor.execute(query, params)
@@ -498,9 +575,23 @@ def get_leave_records(month=None, name=None, leave_types=None, search=None):
             params.extend(leave_types)
             
         if search and search.strip():
-            query += " AND (LOWER(name) LIKE ? OR LOWER(reason) LIKE ? OR LOWER(leave_type) LIKE ? OR date LIKE ?)"
-            s_val = f"%{search.strip().lower()}%"
-            params.extend([s_val, s_val, s_val, s_val])
+            s_clean = search.strip().lower()
+            s_val = f"%{s_clean}%"
+            date_patterns, digits_only = get_date_search_patterns(search)
+            
+            conds = ["LOWER(name) LIKE ?", "LOWER(reason) LIKE ?", "LOWER(leave_type) LIKE ?", "date LIKE ?"]
+            s_params = [s_val, s_val, s_val, s_val]
+
+            if digits_only:
+                conds.append("REPLACE(REPLACE(date, '/', ''), '-', '') LIKE ?")
+                s_params.append(f"%{digits_only}%")
+
+            for dp in date_patterns:
+                conds.append("date LIKE ?")
+                s_params.append(f"%{dp}%")
+
+            query += " AND (" + " OR ".join(conds) + ")"
+            params.extend(s_params)
             
         query += " ORDER BY date ASC, name ASC"
         cursor.execute(query, params)
