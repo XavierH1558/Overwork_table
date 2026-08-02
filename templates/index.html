@@ -554,12 +554,7 @@
                     <div class="card-title">
                         <i class="fa-solid fa-table-list" style="color: var(--accent);"></i> <span id="dashTitleLabel">成員月度統計摘要</span>
                     </div>
-                    <div class="filter-bar">
-                        <label style="font-size: 0.88rem; color: var(--text-muted);">統計月份：</label>
-                        <select id="dashMonthSelect" onchange="syncMonthSelect(this.value)" style="width: 140px; border-color: rgba(139, 92, 246, 0.4);">
-                            <!-- Populated dynamically -->
-                        </select>
-                    </div>
+                    <!-- Filter bar (Month selected via top header) -->
                 </div>
                 <div class="table-responsive">
                     <table>
@@ -592,9 +587,6 @@
                         <i class="fa-solid fa-clock" style="color: #818cf8;"></i> 加班紀錄清單
                     </div>
                     <div class="filter-bar">
-                        <select id="otMonthSelect" onchange="syncMonthSelect(this.value)" style="width: 140px; border-color: rgba(129, 140, 248, 0.4);">
-                            <!-- Populated dynamically -->
-                        </select>
                         <select id="otTypeFilter" onchange="loadOvertime()" style="width: 130px;">
                             <option value="">全部類型</option>
                             <option value="平日加班">平日加班</option>
@@ -639,9 +631,6 @@
                         <i class="fa-solid fa-calendar-xmark" style="color: #38bdf8;"></i> 請假紀錄清單
                     </div>
                     <div class="filter-bar">
-                        <select id="leaveMonthSelect" onchange="syncMonthSelect(this.value)" style="width: 140px; border-color: rgba(56, 189, 248, 0.4);">
-                            <!-- Populated dynamically -->
-                        </select>
                         <select id="leaveTypeFilter" onchange="loadLeaves()" style="width: 130px;">
                             <option value="">全部假別</option>
                             <option value="黑假">黑假</option>
@@ -1183,9 +1172,6 @@
         // Initialize Month Selectors (Starting from 2026/07)
         function initMonthSelector() {
             const headerSelect = document.getElementById('monthSelect');
-            const dashSelect = document.getElementById('dashMonthSelect');
-            const otSelect = document.getElementById('otMonthSelect');
-            const leaveSelect = document.getElementById('leaveMonthSelect');
 
             const now = new Date();
             const startYear = 2026;
@@ -1210,20 +1196,15 @@
 
             const htmlStr = optionsHtml.join('');
             if (headerSelect) headerSelect.innerHTML = htmlStr;
-            if (dashSelect) dashSelect.innerHTML = htmlStr;
-            if (otSelect) otSelect.innerHTML = htmlStr;
-            if (leaveSelect) leaveSelect.innerHTML = htmlStr;
 
             // Default select 2026/07 if available, otherwise first option
             syncMonthSelect('2026/07');
         }
 
-        // Sync all month selectors across tabs
+        // Sync month selector across tabs
         function syncMonthSelect(val) {
-            ['monthSelect', 'dashMonthSelect', 'otMonthSelect', 'leaveMonthSelect'].forEach(id => {
-                const el = document.getElementById(id);
-                if (el) el.value = val;
-            });
+            const el = document.getElementById('monthSelect');
+            if (el) el.value = val;
             loadData();
         }
 
