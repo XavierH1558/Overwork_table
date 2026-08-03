@@ -1,8 +1,12 @@
 import sqlite3
 import os
 import re
+import warnings
 from datetime import datetime
 import parser
+
+warnings.filterwarnings("ignore", category=ResourceWarning)
+warnings.filterwarnings("ignore", message=".*unclosed.*")
 
 DB_DIR = os.environ.get('DATA_DIR', '').strip()
 if DB_DIR:
@@ -81,26 +85,22 @@ class LibsqlConnWrapper:
         pass
 
     def close(self):
-        # Keep client connection session alive for reuse (prevents unclosed session warnings)
-        pass
+        try:
+            self.client.close()
+        except Exception:
+            pass
 
     def __enter__(self):
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
-        pass
-
-_TURSO_CONN_INSTANCE = None
+        self.close()
 
 def get_connection():
-    global _TURSO_CONN_INSTANCE
     if TURSO_DATABASE_URL and TURSO_AUTH_TOKEN:
         try:
-            if _TURSO_CONN_INSTANCE is None:
-                _TURSO_CONN_INSTANCE = LibsqlConnWrapper(TURSO_DATABASE_URL, TURSO_AUTH_TOKEN)
-            return _TURSO_CONN_INSTANCE
+            return LibsqlConnWrapper(TURSO_DATABASE_URL, TURSO_AUTH_TOKEN)
         except Exception as e1:
-            _TURSO_CONN_INSTANCE = None
             try:
                 import libsql_experimental as libsql
                 conn = libsql.connect(TURSO_DATABASE_URL, auth_token=TURSO_AUTH_TOKEN)
