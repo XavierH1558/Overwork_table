@@ -81,7 +81,8 @@ class LibsqlConnWrapper:
         pass
 
     def close(self):
-        self.client.close()
+        # Keep client connection session alive for reuse (prevents unclosed session warnings)
+        pass
 
     def __enter__(self):
         return self
@@ -89,11 +90,17 @@ class LibsqlConnWrapper:
     def __exit__(self, exc_type, exc_val, exc_tb):
         pass
 
+_TURSO_CONN_INSTANCE = None
+
 def get_connection():
+    global _TURSO_CONN_INSTANCE
     if TURSO_DATABASE_URL and TURSO_AUTH_TOKEN:
         try:
-            return LibsqlConnWrapper(TURSO_DATABASE_URL, TURSO_AUTH_TOKEN)
+            if _TURSO_CONN_INSTANCE is None:
+                _TURSO_CONN_INSTANCE = LibsqlConnWrapper(TURSO_DATABASE_URL, TURSO_AUTH_TOKEN)
+            return _TURSO_CONN_INSTANCE
         except Exception as e1:
+            _TURSO_CONN_INSTANCE = None
             try:
                 import libsql_experimental as libsql
                 conn = libsql.connect(TURSO_DATABASE_URL, auth_token=TURSO_AUTH_TOKEN)
