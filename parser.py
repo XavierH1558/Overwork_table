@@ -162,9 +162,9 @@ def process_leave_task(task_text, seg_names, fallback_date, default_year=2026):
             # Case-insensitive removal of names
             for person in (KNOWN_NAMES + seg_names):
                 clean_reason = re.sub(r'(?<![a-zA-Z0-9_])' + re.escape(person) + r'(?![a-zA-Z0-9_])', '', clean_reason, flags=re.IGNORECASE)
-            for kw in ["黑假", "病假", "事假", "特休", "生理假", "WFH", "ＷＦＨ", "出勤確認", "未刷卡", "補卡"]:
+            for kw in list(LEAVE_META.keys()) + ["補卡"]:
                 clean_reason = clean_reason.replace(kw, '')
-            clean_reason = re.sub(r'(請|要請|申請|請假|一天|半天|0\.5天|\d+天|\d{1,2}/\d{1,2})', '', clean_reason)
+            clean_reason = re.sub(r'(請|要請|申請|請假|一天|半天|0\.5天|\d+天|\d{1,2}/\d{1,2}|\b(?:0[1-9]|1[0-2])(?:[0-2][0-9]|3[01])\b)', '', clean_reason)
             clean_reason = re.sub(r'[,，\s]+', ' ', clean_reason).strip()
             clean_reason = re.sub(r'^[,\s，:\-–—~]+|[,\s，:\-–—~]+$', '', clean_reason).strip()
             
