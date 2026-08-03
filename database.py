@@ -192,7 +192,7 @@ def init_db():
 def get_all_members():
     with get_connection() as conn:
         cursor = conn.cursor()
-        cursor.execute('SELECT id, name, COALESCE(location, "台灣辦公室") as location FROM team_members ORDER BY name ASC')
+        cursor.execute("SELECT id, name, COALESCE(location, '台灣辦公室') as location FROM team_members ORDER BY name ASC")
         rows = cursor.fetchall()
         return [dict(r) for r in rows]
 
@@ -200,7 +200,7 @@ def get_all_members():
 def get_member_location_map():
     with get_connection() as conn:
         cursor = conn.cursor()
-        cursor.execute('SELECT name, COALESCE(location, "台灣辦公室") as location FROM team_members')
+        cursor.execute("SELECT name, COALESCE(location, '台灣辦公室') as location FROM team_members")
         rows = cursor.fetchall()
         return {r['name']: r['location'] for r in rows}
 
@@ -287,7 +287,7 @@ def get_member_location_at_date(name, date_str):
             return row['location']
         
         # Fallback to default location in team_members
-        cursor.execute('SELECT COALESCE(location, "台灣辦公室") as location FROM team_members WHERE LOWER(name)=LOWER(?)', (name.strip(),))
+        cursor.execute("SELECT COALESCE(location, '台灣辦公室') as location FROM team_members WHERE LOWER(name)=LOWER(?)", (name.strip(),))
         row = cursor.fetchone()
         if row and row['location']:
             return row['location']
