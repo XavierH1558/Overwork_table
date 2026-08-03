@@ -22,15 +22,85 @@ DB_PATH = os.path.join(DB_DIR, 'attendance.db')
 TURSO_DATABASE_URL = os.environ.get('TURSO_DATABASE_URL', '').strip()
 TURSO_AUTH_TOKEN = os.environ.get('TURSO_AUTH_TOKEN', '').strip()
 
+class LibsqlRowWrapper:
+    def __init__(self, libsql_row):
+        self._dict = libsql_row.asdict()
+        self._tuple = libsql_row.astuple()
+
+    def __getitem__(self, item):
+        if isinstance(item, int):
+            return self._tuple[item]
+        return self._dict[item]
+
+    def keys(self):
+        return self._dict.keys()
+
+    def values(self):
+        return self._dict.values()
+
+    def items(self):
+        return self._dict.items()
+
+    def __iter__(self):
+        return iter(self._dict)
+
+class LibsqlCursorWrapper:
+    def __init__(self, client):
+        self.client = client
+        self.last_result = None
+
+    def execute(self, sql, params=()):
+        if params is None:
+            params = ()
+        res = self.client.execute(sql, list(params))
+        self.last_result = res
+        return self
+
+    def fetchall(self):
+        if not self.last_result or not self.last_result.rows:
+            return []
+        return [LibsqlRowWrapper(r) for r in self.last_result.rows]
+
+    def fetchone(self):
+        if not self.last_result or not self.last_result.rows:
+            return None
+        return LibsqlRowWrapper(self.last_result.rows[0])
+
+class LibsqlConnWrapper:
+    def __init__(self, url, token):
+        import libsql_client
+        http_url = url.replace("libsql://", "https://")
+        if not http_url.startswith("http://") and not http_url.startswith("https://"):
+            http_url = "https://" + http_url
+        self.client = libsql_client.create_client_sync(http_url, auth_token=token)
+
+    def cursor(self):
+        return LibsqlCursorWrapper(self.client)
+
+    def commit(self):
+        pass
+
+    def close(self):
+        self.client.close()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        pass
+
 def get_connection():
     if TURSO_DATABASE_URL and TURSO_AUTH_TOKEN:
         try:
-            import libsql_experimental as libsql
-            conn = libsql.connect(TURSO_DATABASE_URL, auth_token=TURSO_AUTH_TOKEN)
-            conn.row_factory = sqlite3.Row
-            return conn
-        except Exception as e:
-            print(f"[Database] Failed to connect to Turso: {e}, falling back to local SQLite.")
+            return LibsqlConnWrapper(TURSO_DATABASE_URL, TURSO_AUTH_TOKEN)
+        except Exception as e1:
+            try:
+                import libsql_experimental as libsql
+                conn = libsql.connect(TURSO_DATABASE_URL, auth_token=TURSO_AUTH_TOKEN)
+                conn.row_factory = sqlite3.Row
+                return conn
+            except Exception as e2:
+                print(f"[Database] Failed to connect to Turso: {e1} / {e2}, falling back to local SQLite.")
     
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
