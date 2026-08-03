@@ -1197,8 +1197,16 @@
             const htmlStr = optionsHtml.join('');
             if (headerSelect) headerSelect.innerHTML = htmlStr;
 
-            // Default select 2026/07 if available, otherwise first option
-            syncMonthSelect('2026/07');
+            // Default select current month based on system time if available
+            const currentYm = `${currentYear}/${String(currentMonth).padStart(2, '0')}`;
+            const hasCurrentMonth = headerSelect && Array.from(headerSelect.options).some(opt => opt.value === currentYm);
+            const defaultYm = hasCurrentMonth ? currentYm : (headerSelect && headerSelect.options[0] ? headerSelect.options[0].value : '2026/07');
+            syncMonthSelect(defaultYm);
+            
+            // Set default parse year inputs to current year
+            if (document.getElementById('parseYear')) document.getElementById('parseYear').value = currentYear;
+            if (document.getElementById('parseCsvYear')) document.getElementById('parseCsvYear').value = currentYear;
+            if (document.getElementById('parseImageYear')) document.getElementById('parseImageYear').value = currentYear;
         }
 
         // Sync month selector across tabs
