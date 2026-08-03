@@ -19,7 +19,19 @@ else:
 
 DB_PATH = os.path.join(DB_DIR, 'attendance.db')
 
+TURSO_DATABASE_URL = os.environ.get('TURSO_DATABASE_URL', '').strip()
+TURSO_AUTH_TOKEN = os.environ.get('TURSO_AUTH_TOKEN', '').strip()
+
 def get_connection():
+    if TURSO_DATABASE_URL and TURSO_AUTH_TOKEN:
+        try:
+            import libsql_experimental as libsql
+            conn = libsql.connect(TURSO_DATABASE_URL, auth_token=TURSO_AUTH_TOKEN)
+            conn.row_factory = sqlite3.Row
+            return conn
+        except Exception as e:
+            print(f"[Database] Failed to connect to Turso: {e}, falling back to local SQLite.")
+    
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     return conn
