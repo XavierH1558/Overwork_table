@@ -1585,15 +1585,22 @@
                 const tr = document.createElement('tr');
                 const badgeClass = getLeaveBadgeClass(r.leave_type);
                 const isCompLeave = (r.leave_type === '黑假' || r.leave_type === 'WFH');
-                let statusBadge = '<span style="color:var(--text-muted);font-size:0.83rem;">-</span>';
+                let statusControlHtml = '<span style="color:var(--text-muted);font-size:0.83rem;">-</span>';
                 
                 if (isCompLeave) {
                     const isDed = (r.is_comp_deducted === undefined || r.is_comp_deducted === null) ? 1 : (r.is_comp_deducted ? 1 : 0);
-                    if (isDed) {
-                        statusBadge = `<span class="badge" style="background:rgba(56,189,248,0.18);color:#38bdf8;border:1px solid rgba(56,189,248,0.4);cursor:pointer;" onclick="toggleDeductedStatus(${r.id}, 0)" title="點擊切換為『還沒扣』"><i class="fa-solid fa-check"></i> 已扣補休</span>`;
-                    } else {
-                        statusBadge = `<span class="badge" style="background:rgba(245,158,11,0.2);color:#fcd34d;border:1px solid rgba(245,158,11,0.4);cursor:pointer;" onclick="toggleDeductedStatus(${r.id}, 1)" title="點擊切換為『已扣補休』"><i class="fa-solid fa-hourglass-half"></i> 還沒扣</span>`;
-                    }
+                    const bgStyle = isDed === 1 
+                        ? 'background:rgba(56,189,248,0.15);color:#38bdf8;border:1px solid rgba(56,189,248,0.4);' 
+                        : 'background:rgba(245,158,11,0.18);color:#fcd34d;border:1px solid rgba(245,158,11,0.4);';
+
+                    statusControlHtml = `
+                        <select onchange="changeDeductedStatus(${r.id}, this)" 
+                                style="${bgStyle} font-weight: 600; font-size: 0.82rem; padding: 4px 8px; border-radius: 6px; cursor: pointer; outline: none; transition: all 0.15s ease;"
+                                title="選擇扣除狀態">
+                            <option value="1" ${isDed === 1 ? 'selected' : ''} style="background:#1e293b;color:#38bdf8;">✓ 已扣補休</option>
+                            <option value="0" ${isDed === 0 ? 'selected' : ''} style="background:#1e293b;color:#fcd34d;">⏳ 還沒扣</option>
+                        </select>
+                    `;
                 }
 
                 tr.innerHTML = `
@@ -1602,7 +1609,7 @@
                     <td><span class="badge ${badgeClass}">${r.leave_type}</span></td>
                     <td>${r.duration}</td>
                     <td>${r.google_comp_days > 0 ? `${r.google_comp_days} 天` : '-'}</td>
-                    <td>${statusBadge}</td>
+                    <td>${statusControlHtml}</td>
                     <td>${r.reason || '-'}</td>
                     <td>
                         <button class="action-btn" onclick="openLeaveEditModal(${r.id})"><i class="fa-solid fa-pen-to-square"></i> 編輯</button>
@@ -1613,22 +1620,39 @@
             });
         }
 
-        // Toggle Deducted Status
-        function toggleDeductedStatus(id, newStatus) {
+        // Change Deducted Status with Optimistic UI Update (Zero Latency)
+        function changeDeductedStatus(id, selectEl) {
             ensureAdminUnlocked(async () => {
-                const res = await fetch(`/api/leaves/${id}/deducted_status`, {
-                    method: 'PUT',
-                    headers: getAuthHeaders(),
-                    body: JSON.stringify({ is_comp_deducted: newStatus })
-                });
-                if (res.ok) {
-                    showToast(newStatus ? '已切換為：已扣補休' : '已切換為：還沒扣');
-                    await loadLeaves();
-                    await loadStats();
-                    await refreshMemberLocationMap();
+                const val = parseInt(selectEl.value);
+                // Optimistic visual feedback immediately
+                if (val === 1) {
+                    selectEl.style.background = 'rgba(56, 189, 248, 0.15)';
+                    selectEl.style.color = '#38bdf8';
+                    selectEl.style.borderColor = 'rgba(56, 189, 248, 0.4)';
                 } else {
-                    const err = await res.json();
-                    alert(err.message || '更新失敗');
+                    selectEl.style.background = 'rgba(245, 158, 11, 0.18)';
+                    selectEl.style.color = '#fcd34d';
+                    selectEl.style.borderColor = 'rgba(245, 158, 11, 0.4)';
+                }
+                showToast(val === 1 ? '已更新狀態：已扣補休' : '已更新狀態：還沒扣');
+
+                // Async sync in background
+                try {
+                    const res = await fetch(`/api/leaves/${id}/deducted_status`, {
+                        method: 'PUT',
+                        headers: getAuthHeaders(),
+                        body: JSON.stringify({ is_comp_deducted: val })
+                    });
+                    if (res.ok) {
+                        loadStats();
+                        refreshMemberLocationMap();
+                    } else {
+                        const err = await res.json();
+                        alert(err.message || '更新失敗');
+                        await loadLeaves(); // Revert UI on error
+                    }
+                } catch (e) {
+                    await loadLeaves();
                 }
             });
         }
