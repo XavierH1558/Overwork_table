@@ -1496,6 +1496,11 @@
                     locDetailHtml = `<span class="badge" style="background:rgba(148,163,184,0.15);color:#cbd5e1;">📍 ${item.location || '-'}</span>`;
                 }
 
+                const mQuota = item.google_comp_quota !== undefined ? item.google_comp_quota : 0;
+                const mUsed = item.google_comp_used_total !== undefined ? item.google_comp_used_total : 0;
+                const mPending = item.google_comp_pending_total !== undefined ? item.google_comp_pending_total : 0;
+                const mRem = item.google_comp_remaining !== undefined ? item.google_comp_remaining : (mQuota - mUsed);
+
                 const deductedDetails = (item.google_comp_deducted_details || []).join('\n');
                 const pendingDetails = (item.google_comp_pending_details || []).join('\n');
                 
