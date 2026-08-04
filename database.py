@@ -146,9 +146,16 @@ def init_db():
                 reason TEXT NOT NULL,
                 year INTEGER,
                 month INTEGER,
+                is_comp_deducted INTEGER DEFAULT 1,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         ''')
+
+        # Check if is_comp_deducted column exists for existing leave_records table
+        cursor.execute("PRAGMA table_info(leave_records)")
+        lv_cols = [r[1] for r in cursor.fetchall()]
+        if 'is_comp_deducted' not in lv_cols:
+            cursor.execute("ALTER TABLE leave_records ADD COLUMN is_comp_deducted INTEGER DEFAULT 1")
 
         # Team members table
         cursor.execute('''
@@ -205,10 +212,19 @@ def get_all_members():
         cursor.execute("SELECT id, name, COALESCE(location, '台灣辦公室') as location, COALESCE(google_comp_quota, 0.0) as google_comp_quota FROM team_members ORDER BY name ASC")
         rows = cursor.fetchall()
         
-        cursor.execute("SELECT name, SUM(COALESCE(google_comp_days, 0.0)) as used FROM leave_records GROUP BY LOWER(name)")
+        cursor.execute("""
+            SELECT name, 
+                   SUM(CASE WHEN COALESCE(is_comp_deducted, 1) = 1 THEN COALESCE(google_comp_days, 0.0) ELSE 0 END) as used,
+                   SUM(CASE WHEN COALESCE(is_comp_deducted, 1) = 0 THEN COALESCE(google_comp_days, 0.0) ELSE 0 END) as pending
+            FROM leave_records 
+            GROUP BY LOWER(name)
+        """)
         used_map = {}
+        pending_map = {}
         for r in cursor.fetchall():
-            used_map[str(r['name']).lower()] = float(r['used'] or 0.0)
+            m_lower = str(r['name']).lower()
+            used_map[m_lower] = float(r['used'] or 0.0)
+            pending_map[m_lower] = float(r['pending'] or 0.0)
 
         results = []
         for r in rows:
@@ -216,9 +232,11 @@ def get_all_members():
             m_name = m_dict['name']
             quota = float(m_dict.get('google_comp_quota') or 0.0)
             used = used_map.get(m_name.lower(), 0.0)
+            pending = pending_map.get(m_name.lower(), 0.0)
             remaining = round(quota - used, 2)
             m_dict['google_comp_quota'] = quota
             m_dict['google_comp_used'] = round(used, 2)
+            m_dict['google_comp_pending'] = round(pending, 2)
             m_dict['google_comp_remaining'] = remaining
             results.append(m_dict)
             
@@ -399,14 +417,15 @@ def add_overtime_record(date, name, time_str, hours, reason, note=None, eval_hou
         return cursor.lastrowid
 
 
-def add_leave_record(date, name, leave_type, duration, google_comp_days, reason):
+def add_leave_record(date, name, leave_type, duration, google_comp_days, reason, is_comp_deducted=1):
     y, m = parse_ym(date)
+    is_ded = 1 if int(bool(is_comp_deducted)) else 0
     with get_connection() as conn:
         cursor = conn.cursor()
         cursor.execute('''
-            INSERT INTO leave_records (date, name, leave_type, duration, google_comp_days, reason, year, month)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        ''', (date, name, leave_type, duration, google_comp_days, reason, y, m))
+            INSERT INTO leave_records (date, name, leave_type, duration, google_comp_days, reason, year, month, is_comp_deducted)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (date, name, leave_type, duration, google_comp_days, reason, y, m, is_ded))
         conn.commit()
         return cursor.lastrowid
 
@@ -743,15 +762,24 @@ def update_overtime_record(rec_id, date, name, time_str, hours, reason, note, ev
         conn.commit()
 
 
-def update_leave_record(rec_id, date, name, leave_type, duration, google_comp_days, reason):
+def update_leave_record(rec_id, date, name, leave_type, duration, google_comp_days, reason, is_comp_deducted=1):
     y, m = parse_ym(date)
+    is_ded = 1 if int(bool(is_comp_deducted)) else 0
     with get_connection() as conn:
         cursor = conn.cursor()
         cursor.execute('''
             UPDATE leave_records
-            SET date=?, name=?, leave_type=?, duration=?, google_comp_days=?, reason=?, year=?, month=?
+            SET date=?, name=?, leave_type=?, duration=?, google_comp_days=?, reason=?, year=?, month=?, is_comp_deducted=?
             WHERE id=?
-        ''', (date, name, leave_type, duration, google_comp_days, reason, y, m, rec_id))
+        ''', (date, name, leave_type, duration, google_comp_days, reason, y, m, is_ded, rec_id))
+        conn.commit()
+
+
+def update_leave_deducted_status(rec_id, is_comp_deducted):
+    is_ded = 1 if int(bool(is_comp_deducted)) else 0
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute('UPDATE leave_records SET is_comp_deducted=? WHERE id=?', (is_ded, rec_id))
         conn.commit()
 
 
@@ -931,14 +959,20 @@ def get_monthly_stats(month=None):
                     label = f"{lt} {d_str}"
                 leave_breakdown.append({"type": lt, "label": label})
 
-            # Calculate overall Google comp quota and remaining
+            # Calculate overall Google comp quota, used (deducted=1), pending (deducted=0), and remaining
             cursor.execute("SELECT COALESCE(google_comp_quota, 0.0) FROM team_members WHERE LOWER(name) = LOWER(?)", (name,))
             m_row = cursor.fetchone()
             m_quota = float(m_row[0] or 0.0) if m_row else 0.0
 
-            cursor.execute("SELECT SUM(COALESCE(google_comp_days, 0.0)) FROM leave_records WHERE LOWER(name) = LOWER(?)", (name,))
+            cursor.execute("""
+                SELECT 
+                    SUM(CASE WHEN COALESCE(is_comp_deducted, 1) = 1 THEN COALESCE(google_comp_days, 0.0) ELSE 0 END) as used,
+                    SUM(CASE WHEN COALESCE(is_comp_deducted, 1) = 0 THEN COALESCE(google_comp_days, 0.0) ELSE 0 END) as pending
+                FROM leave_records WHERE LOWER(name) = LOWER(?)
+            """, (name,))
             u_row = cursor.fetchone()
             m_used_overall = float(u_row[0] or 0.0) if u_row else 0.0
+            m_pending_overall = float(u_row[1] or 0.0) if u_row else 0.0
             m_remaining = round(m_quota - m_used_overall, 2)
 
             stats_list.append({
@@ -961,6 +995,7 @@ def get_monthly_stats(month=None):
                 "google_comp_total": round(google_comp_total, 2),
                 "google_comp_quota": m_quota,
                 "google_comp_used_total": round(m_used_overall, 2),
+                "google_comp_pending_total": round(m_pending_overall, 2),
                 "google_comp_remaining": m_remaining
             })
 

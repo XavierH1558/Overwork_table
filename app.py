@@ -314,8 +314,9 @@ def add_leave():
     duration = data.get('duration', '1天')
     google_comp_days = float(data.get('google_comp_days', 0.0))
     reason = data.get('reason', '')
+    is_comp_deducted = int(data.get('is_comp_deducted', 1))
     
-    rec_id = database.add_leave_record(date, name, leave_type, duration, google_comp_days, reason)
+    rec_id = database.add_leave_record(date, name, leave_type, duration, google_comp_days, reason, is_comp_deducted)
     return jsonify({"status": "success", "id": rec_id})
 
 @app.route('/api/leaves/<int:rec_id>', methods=['PUT'])
@@ -329,8 +330,18 @@ def update_leave(rec_id):
     duration = data.get('duration', '1天')
     google_comp_days = float(data.get('google_comp_days', 0.0))
     reason = data.get('reason', '')
+    is_comp_deducted = int(data.get('is_comp_deducted', 1))
     
-    database.update_leave_record(rec_id, date, name, leave_type, duration, google_comp_days, reason)
+    database.update_leave_record(rec_id, date, name, leave_type, duration, google_comp_days, reason, is_comp_deducted)
+    return jsonify({"status": "success"})
+
+@app.route('/api/leaves/<int:rec_id>/deducted_status', methods=['PUT'])
+def update_leave_deducted_status(rec_id):
+    if not is_admin_authorized():
+        return jsonify({"status": "error", "message": "需要管理員權限才能執行此操作！"}), 403
+    data = request.json or {}
+    is_comp_deducted = int(data.get('is_comp_deducted', 1))
+    database.update_leave_deducted_status(rec_id, is_comp_deducted)
     return jsonify({"status": "success"})
 
 @app.route('/api/leaves/<int:rec_id>', methods=['DELETE'])

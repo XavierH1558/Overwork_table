@@ -657,6 +657,7 @@
                                 <th>假別</th>
                                 <th>時長</th>
                                 <th>Google 補休(天)</th>
+                                <th>補休扣除狀態</th>
                                 <th>事由</th>
                                 <th>操作</th>
                             </tr>
@@ -837,12 +838,11 @@
                     <table>
                         <thead>
                             <tr>
-                                <th style="width: 110px;">成員姓名</th>
-                                <th style="width: 160px;">目前工作地點 / 駐點</th>
-                                <th style="width: 140px;">Google補休總額度</th>
-                                <th style="width: 90px;">已扣除天數</th>
-                                <th style="width: 110px;">實際剩餘天數</th>
-                                <th style="width: 150px;">加班屬性分類</th>
+                                <th style="width: 120px;">成員姓名</th>
+                                <th style="width: 180px;">目前工作地點 / 駐點</th>
+                                <th style="width: 150px;">Google補休總額度</th>
+                                <th style="width: 100px;">累計已扣天數</th>
+                                <th style="width: 160px;">加班屬性分類</th>
                                 <th style="width: 80px;">操作</th>
                             </tr>
                         </thead>
@@ -950,6 +950,20 @@
                         <option value="1天">1天</option>
                         <option value="0.5天">0.5天</option>
                     </select>
+                </div>
+                <!-- Google Comp Leave Deduction Status (Only active for 黑假/WFH) -->
+                <div class="form-group" id="modalCompDeductedGroup" style="display:none; grid-column: 1 / -1;">
+                    <label>Google 補休扣除狀態 (僅限黑假/WFH)</label>
+                    <div id="modalCompDeductedBox" style="display: flex; gap: 1.5rem; align-items: center; padding: 0.55rem 0.8rem; background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.12); border-radius: 0.5rem; transition: all 0.2s ease;">
+                        <label style="display: flex; align-items: center; gap: 0.4rem; cursor: pointer; margin: 0; font-weight: 500;">
+                            <input type="radio" name="modalCompDeducted" value="1" id="modalCompDeducted1" onchange="updateModalCompBadge()" checked style="accent-color: #38bdf8; width: 16px; height: 16px; cursor: pointer;">
+                            <span class="badge" style="background:rgba(56,189,248,0.2);color:#38bdf8;border:1px solid rgba(56,189,248,0.4);"><i class="fa-solid fa-check"></i> 已扣補休</span>
+                        </label>
+                        <label style="display: flex; align-items: center; gap: 0.4rem; cursor: pointer; margin: 0; font-weight: 500;">
+                            <input type="radio" name="modalCompDeducted" value="0" id="modalCompDeducted0" onchange="updateModalCompBadge()" style="accent-color: #f59e0b; width: 16px; height: 16px; cursor: pointer;">
+                            <span class="badge" style="background:rgba(245,158,11,0.2);color:#fcd34d;border:1px solid rgba(245,158,11,0.4);"><i class="fa-solid fa-hourglass-half"></i> 還沒扣</span>
+                        </label>
+                    </div>
                 </div>
                 <div class="form-group" style="grid-column: 1 / -1;">
                     <label>事由</label>
@@ -1347,11 +1361,16 @@
                 }
 
                 const mQuota = item.google_comp_quota !== undefined ? item.google_comp_quota : 0;
-                const mRem = item.google_comp_remaining !== undefined ? item.google_comp_remaining : 0;
-                const compStyle = mRem > 0 ? 'color: #38bdf8;' : 'color: #ef4444; font-weight: bold;';
+                const mUsed = item.google_comp_used_total !== undefined ? item.google_comp_used_total : 0;
+                const mPending = item.google_comp_pending_total !== undefined ? item.google_comp_pending_total : 0;
+                const mRem = item.google_comp_remaining !== undefined ? item.google_comp_remaining : (mQuota - mUsed);
+
+                const compStyle = mRem > 0 ? 'color: #38bdf8; font-weight: bold;' : 'color: #ef4444; font-weight: bold;';
+                const pendingInfo = mPending > 0 ? ` <span style="color:#fcd34d; font-size:0.75rem; white-space:nowrap;">(待扣 ${mPending}天)</span>` : '';
+
                 const compDisplay = mQuota > 0 
-                    ? `<div><strong>${googleComp} 天</strong></div><div style="font-size: 0.78rem; color: var(--text-muted);">總額度 ${mQuota}天 / <span style="${compStyle}">剩 ${mRem}天</span></div>` 
-                    : `<div><strong>${googleComp} 天</strong></div>`;
+                    ? `<div><strong>${googleComp} 天</strong>${pendingInfo}</div><div style="font-size: 0.78rem; color: var(--text-muted); margin-top:2px;">總額 ${mQuota}天 | 已扣 ${mUsed}天 | <span style="${compStyle}">最新剩 ${mRem}天</span></div>` 
+                    : `<div><strong>${googleComp} 天</strong>${pendingInfo}</div>`;
 
                 const tr = document.createElement('tr');
                 tr.innerHTML = `
@@ -1565,12 +1584,25 @@
             records.forEach(r => {
                 const tr = document.createElement('tr');
                 const badgeClass = getLeaveBadgeClass(r.leave_type);
+                const isCompLeave = (r.leave_type === '黑假' || r.leave_type === 'WFH');
+                let statusBadge = '<span style="color:var(--text-muted);font-size:0.83rem;">-</span>';
+                
+                if (isCompLeave) {
+                    const isDed = (r.is_comp_deducted === undefined || r.is_comp_deducted === null) ? 1 : (r.is_comp_deducted ? 1 : 0);
+                    if (isDed) {
+                        statusBadge = `<span class="badge" style="background:rgba(56,189,248,0.18);color:#38bdf8;border:1px solid rgba(56,189,248,0.4);cursor:pointer;" onclick="toggleDeductedStatus(${r.id}, 0)" title="點擊切換為『還沒扣』"><i class="fa-solid fa-check"></i> 已扣補休</span>`;
+                    } else {
+                        statusBadge = `<span class="badge" style="background:rgba(245,158,11,0.2);color:#fcd34d;border:1px solid rgba(245,158,11,0.4);cursor:pointer;" onclick="toggleDeductedStatus(${r.id}, 1)" title="點擊切換為『已扣補休』"><i class="fa-solid fa-hourglass-half"></i> 還沒扣</span>`;
+                    }
+                }
+
                 tr.innerHTML = `
                     <td>${r.date}</td>
                     <td><strong>${r.name}</strong></td>
                     <td><span class="badge ${badgeClass}">${r.leave_type}</span></td>
                     <td>${r.duration}</td>
                     <td>${r.google_comp_days > 0 ? `${r.google_comp_days} 天` : '-'}</td>
+                    <td>${statusBadge}</td>
                     <td>${r.reason || '-'}</td>
                     <td>
                         <button class="action-btn" onclick="openLeaveEditModal(${r.id})"><i class="fa-solid fa-pen-to-square"></i> 編輯</button>
@@ -1578,6 +1610,26 @@
                     </td>
                 `;
                 tbody.appendChild(tr);
+            });
+        }
+
+        // Toggle Deducted Status
+        function toggleDeductedStatus(id, newStatus) {
+            ensureAdminUnlocked(async () => {
+                const res = await fetch(`/api/leaves/${id}/deducted_status`, {
+                    method: 'PUT',
+                    headers: getAuthHeaders(),
+                    body: JSON.stringify({ is_comp_deducted: newStatus })
+                });
+                if (res.ok) {
+                    showToast(newStatus ? '已切換為：已扣補休' : '已切換為：還沒扣');
+                    await loadLeaves();
+                    await loadStats();
+                    await refreshMemberLocationMap();
+                } else {
+                    const err = await res.json();
+                    alert(err.message || '更新失敗');
+                }
             });
         }
 
@@ -1894,10 +1946,16 @@
         function updateModalCompBadge() {
             const leaveTypeGroup = document.getElementById('modalLeaveTypeGroup');
             const badgeContainer = document.getElementById('modalCompBadge');
+            const deductedGroup = document.getElementById('modalCompDeductedGroup');
+            const deductedBox = document.getElementById('modalCompDeductedBox');
+            const rad1 = document.getElementById('modalCompDeducted1');
+            const rad0 = document.getElementById('modalCompDeducted0');
+
             if (!badgeContainer) return;
 
             if (leaveTypeGroup.style.display === 'none') {
                 badgeContainer.style.display = 'none';
+                if (deductedGroup) deductedGroup.style.display = 'none';
                 return;
             }
 
@@ -1908,6 +1966,24 @@
             const durationSelect = document.getElementById('modalDuration');
             const duration = durationSelect ? durationSelect.value : '1天';
             const isCompLeave = (leaveType === '黑假' || leaveType === 'WFH');
+
+            // Handle Comp Leave Deduction Option (Disabled & Grayed out for general leave types)
+            if (deductedGroup && deductedBox) {
+                deductedGroup.style.display = 'flex';
+                if (isCompLeave) {
+                    deductedBox.style.opacity = '1';
+                    deductedBox.style.pointerEvents = 'auto';
+                    deductedBox.style.filter = 'none';
+                    if (rad1) rad1.disabled = false;
+                    if (rad0) rad0.disabled = false;
+                } else {
+                    deductedBox.style.opacity = '0.4';
+                    deductedBox.style.pointerEvents = 'none';
+                    deductedBox.style.filter = 'grayscale(1)';
+                    if (rad1) rad1.disabled = true;
+                    if (rad0) rad0.disabled = true;
+                }
+            }
 
             if (!name) {
                 badgeContainer.style.display = 'none';
@@ -1958,6 +2034,8 @@
 
                 document.getElementById('modalLeaveType').value = '黑假';
                 document.getElementById('modalDuration').value = '1天';
+                const r1 = document.getElementById('modalCompDeducted1');
+                if (r1) r1.checked = true;
 
                 updateModalCompBadge();
                 document.getElementById('editPreviewModal').classList.add('show');
@@ -2028,6 +2106,15 @@
                 document.getElementById('modalLeaveType').value = r.leave_type || '黑假';
                 document.getElementById('modalDuration').value = r.duration || '1天';
 
+                const isDed = (r.is_comp_deducted === undefined || r.is_comp_deducted === null) ? 1 : (r.is_comp_deducted ? 1 : 0);
+                if (isDed) {
+                    const r1 = document.getElementById('modalCompDeducted1');
+                    if (r1) r1.checked = true;
+                } else {
+                    const r0 = document.getElementById('modalCompDeducted0');
+                    if (r0) r0.checked = true;
+                }
+
                 updateModalCompBadge();
                 document.getElementById('editPreviewModal').classList.add('show');
             });
@@ -2047,6 +2134,9 @@
                 return;
             }
 
+            const selectedDeducted = document.querySelector('input[name="modalCompDeducted"]:checked');
+            const is_comp_deducted = selectedDeducted ? parseInt(selectedDeducted.value) : 1;
+
             if (type === 'edit_leave_db') {
                 // Editing a saved DB leave record
                 const leave_type = document.getElementById('modalLeaveType').value;
@@ -2056,13 +2146,14 @@
                 const res = await fetch(`/api/leaves/${id}`, {
                     method: 'PUT',
                     headers: getAuthHeaders(),
-                    body: JSON.stringify({ date, name, leave_type, duration, google_comp_days, reason })
+                    body: JSON.stringify({ date, name, leave_type, duration, google_comp_days, reason, is_comp_deducted })
                 });
                 if (res.ok) {
                     showToast('已更新請假紀錄');
                     closeEditModal();
-                    loadLeaves();
-                    loadStats();
+                    await loadLeaves();
+                    await loadStats();
+                    await refreshMemberLocationMap();
                 } else {
                     const err = await res.json();
                     alert(err.message || '更新失敗');
@@ -2124,12 +2215,18 @@
                 const res = await fetch('/api/leaves', {
                     method: 'POST',
                     headers: getAuthHeaders(),
-                    body: JSON.stringify({ date, name, leave_type, duration, google_comp_days, reason })
+                    body: JSON.stringify({ date, name, leave_type, duration, google_comp_days, reason, is_comp_deducted })
                 });
                 if (res.ok) {
                     showToast('新增請假紀錄成功！');
                     closeEditModal();
-                    loadLeaves();
+                    await loadLeaves();
+                    await loadStats();
+                    await refreshMemberLocationMap();
+                } else {
+                    const err = await res.json();
+                    alert(err.message || '新增請假紀錄失敗');
+                }
                     loadStats();
                 } else {
                     const err = await res.json();
@@ -2351,7 +2448,6 @@
                         </div>
                     </td>
                     <td>${used} 天</td>
-                    <td>${remainingBadge}</td>
                     <td>${classBadge}</td>
                     <td>
                         <button class="action-btn delete" onclick="deleteMember(${m.id})"><i class="fa-solid fa-trash"></i> 刪除</button>

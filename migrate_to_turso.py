@@ -95,6 +95,7 @@ def migrate():
             reason TEXT NOT NULL,
             year INTEGER,
             month INTEGER,
+            is_comp_deducted INTEGER DEFAULT 1,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )''',
         '''CREATE TABLE IF NOT EXISTS team_members (
