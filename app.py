@@ -41,9 +41,10 @@ def add_member():
     data = request.json or {}
     name = data.get('name', '')
     location = data.get('location', '台灣辦公室')
+    google_comp_quota = float(data.get('google_comp_quota', 0.0))
     if not name.strip():
         return jsonify({"status": "error", "message": "姓名不能為空"}), 400
-    rec_id = database.add_member(name, location)
+    rec_id = database.add_member(name, location, google_comp_quota)
     return jsonify({"status": "success", "id": rec_id})
 
 @app.route('/api/members/<int:member_id>/location', methods=['PUT'])
@@ -53,6 +54,15 @@ def update_member_location(member_id):
     data = request.json or {}
     location = data.get('location', '台灣辦公室')
     database.update_member_location(member_id, location)
+    return jsonify({"status": "success"})
+
+@app.route('/api/members/<int:member_id>/quota', methods=['PUT'])
+def update_member_quota(member_id):
+    if not is_admin_authorized():
+        return jsonify({"status": "error", "message": "需要管理員權限才能執行此操作！"}), 403
+    data = request.json or {}
+    google_comp_quota = float(data.get('google_comp_quota', 0.0))
+    database.update_member_quota(member_id, google_comp_quota)
     return jsonify({"status": "success"})
 
 @app.route('/api/members/<int:member_id>', methods=['DELETE'])

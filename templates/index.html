@@ -815,8 +815,8 @@
                         <i class="fa-solid fa-users-gear" style="color: var(--accent);"></i> 團隊成員與駐點管理
                     </div>
                     <div class="filter-bar" style="flex-wrap: wrap; gap: 0.5rem;">
-                        <input type="text" id="newMemberName" placeholder="輸入新成員姓名..." style="width: 160px;">
-                        <select id="newMemberLocation" style="width: 165px;">
+                        <input type="text" id="newMemberName" placeholder="輸入新成員姓名..." style="width: 150px;">
+                        <select id="newMemberLocation" style="width: 150px;">
                             <option value="台灣辦公室">台灣辦公室</option>
                             <option value="台灣工廠">台灣工廠</option>
                             <option value="台灣實驗室">台灣實驗室</option>
@@ -824,22 +824,26 @@
                             <option value="美國LAB">美國LAB</option>
                             <option value="墨西哥GDL工廠">墨西哥GDL工廠</option>
                         </select>
+                        <input type="number" step="0.5" id="newMemberQuota" placeholder="補休總額度(天)..." style="width: 130px;" value="0">
                         <button class="btn btn-primary" onclick="addMember()">
                             <i class="fa-solid fa-user-plus"></i> 新增成員
                         </button>
                     </div>
                 </div>
                 <p style="font-size: 0.88rem; color: var(--text-muted);">
-                    在此維護團隊成員與駐點位置（工廠與非工廠），系統將根據成員駐點自動判斷加班起始時間規則 (工廠 19:00 / 非工廠 20:00)。
+                    在此維護團隊成員、駐點位置與 Google 補休總額度。請假時系統會自動從總額度扣除並算出實際剩餘天數。
                 </p>
                 <div class="table-responsive">
                     <table>
                         <thead>
                             <tr>
-                                <th style="width: 130px;">成員姓名</th>
-                                <th style="width: 200px;">目前工作地點 / 駐點</th>
-                                <th style="width: 200px;">加班屬性分類</th>
-                                <th style="width: 100px;">操作</th>
+                                <th style="width: 110px;">成員姓名</th>
+                                <th style="width: 160px;">目前工作地點 / 駐點</th>
+                                <th style="width: 140px;">Google補休總額度</th>
+                                <th style="width: 90px;">已扣除天數</th>
+                                <th style="width: 110px;">實際剩餘天數</th>
+                                <th style="width: 150px;">加班屬性分類</th>
+                                <th style="width: 80px;">操作</th>
                             </tr>
                         </thead>
                         <tbody id="membersTableBody">
@@ -913,7 +917,11 @@
                 </div>
                 <div class="form-group">
                     <label>姓名</label>
-                    <input type="text" id="modalName" placeholder="例如: Benny">
+                    <input type="text" id="modalName" placeholder="例如: Benny" oninput="updateModalCompBadge()">
+                </div>
+                <!-- Google Comp Leave Status Badge -->
+                <div id="modalCompBadge" style="grid-column: 1 / -1; display: none; padding: 0.6rem 0.85rem; border-radius: 0.5rem; background: rgba(56, 189, 248, 0.1); border: 1px solid rgba(56, 189, 248, 0.35); font-size: 0.88rem; color: #38bdf8;">
+                    <span id="modalCompBadgeText">載入補休額度中...</span>
                 </div>
                 <div class="form-group" id="modalTimeGroup">
                     <label>時間區間</label>
@@ -925,7 +933,7 @@
                 </div>
                 <div class="form-group" id="modalLeaveTypeGroup" style="display:none;">
                     <label>假別</label>
-                    <select id="modalLeaveType">
+                    <select id="modalLeaveType" onchange="updateModalCompBadge()">
                         <option value="黑假">黑假</option>
                         <option value="WFH">WFH</option>
                         <option value="病假">病假</option>
@@ -938,7 +946,7 @@
                 </div>
                 <div class="form-group" id="modalDurationGroup" style="display:none;">
                     <label>時長</label>
-                    <select id="modalDuration">
+                    <select id="modalDuration" onchange="updateModalCompBadge()">
                         <option value="1天">1天</option>
                         <option value="0.5天">0.5天</option>
                     </select>
@@ -1338,6 +1346,13 @@
                     locDetailHtml = `<span class="badge" style="background:rgba(148,163,184,0.15);color:#cbd5e1;">📍 ${item.location || '-'}</span>`;
                 }
 
+                const mQuota = item.google_comp_quota !== undefined ? item.google_comp_quota : 0;
+                const mRem = item.google_comp_remaining !== undefined ? item.google_comp_remaining : 0;
+                const compStyle = mRem > 0 ? 'color: #38bdf8;' : 'color: #ef4444; font-weight: bold;';
+                const compDisplay = mQuota > 0 
+                    ? `<div><strong>${googleComp} 天</strong></div><div style="font-size: 0.78rem; color: var(--text-muted);">總額度 ${mQuota}天 / <span style="${compStyle}">剩 ${mRem}天</span></div>` 
+                    : `<div><strong>${googleComp} 天</strong></div>`;
+
                 const tr = document.createElement('tr');
                 tr.innerHTML = `
                     <td><strong>${item.name}</strong></td>
@@ -1348,7 +1363,7 @@
                     <td>${spDisplay}</td>
                     <td>${leaveCount} 筆</td>
                     <td>${leaveDetailHtml}</td>
-                    <td>${googleComp} 天</td>
+                    <td>${compDisplay}</td>
                 `;
                 tbody.appendChild(tr);
             });
@@ -1371,13 +1386,21 @@
             return s;
         }
 
+        let memberQuotaMap = {};
+
         async function refreshMemberLocationMap() {
             try {
                 const res = await fetch('/api/members');
                 const members = await res.json();
                 memberLocationMap = {};
+                memberQuotaMap = {};
                 members.forEach(m => {
                     memberLocationMap[m.name] = m.location || '台灣辦公室';
+                    memberQuotaMap[m.name] = {
+                        quota: m.google_comp_quota || 0,
+                        used: m.google_comp_used || 0,
+                        remaining: m.google_comp_remaining !== undefined ? m.google_comp_remaining : 0
+                    };
                 });
 
                 const hRes = await fetch('/api/members/locations');
@@ -1868,9 +1891,56 @@
             });
         }
 
+        function updateModalCompBadge() {
+            const leaveTypeGroup = document.getElementById('modalLeaveTypeGroup');
+            const badgeContainer = document.getElementById('modalCompBadge');
+            if (!badgeContainer) return;
+
+            if (leaveTypeGroup.style.display === 'none') {
+                badgeContainer.style.display = 'none';
+                return;
+            }
+
+            const nameInput = document.getElementById('modalName');
+            const name = nameInput ? nameInput.value.trim() : '';
+            const leaveTypeSelect = document.getElementById('modalLeaveType');
+            const leaveType = leaveTypeSelect ? leaveTypeSelect.value : '';
+            const durationSelect = document.getElementById('modalDuration');
+            const duration = durationSelect ? durationSelect.value : '1天';
+            const isCompLeave = (leaveType === '黑假' || leaveType === 'WFH');
+
+            if (!name) {
+                badgeContainer.style.display = 'none';
+                return;
+            }
+
+            const mData = memberQuotaMap[name] || memberQuotaMap[Object.keys(memberQuotaMap).find(k => k.toLowerCase() === name.toLowerCase())];
+            const quota = mData ? mData.quota : 0;
+            const used = mData ? mData.used : 0;
+            const remaining = mData ? mData.remaining : 0;
+
+            const reqDays = isCompLeave ? (duration === '0.5天' ? 0.5 : 1.0) : 0;
+
+            badgeContainer.style.display = 'flex';
+            const textEl = document.getElementById('modalCompBadgeText');
+
+            if (remaining <= 0 || (isCompLeave && remaining < reqDays)) {
+                badgeContainer.style.background = 'rgba(239, 68, 68, 0.15)';
+                badgeContainer.style.borderColor = 'rgba(239, 68, 68, 0.4)';
+                badgeContainer.style.color = '#fca5a5';
+                textEl.innerHTML = `⚠️ <strong>${name}</strong> 的 Google 補休：總額度 <strong>${quota}</strong> 天 | 已扣除 <strong>${used}</strong> 天 | <span style="text-decoration:underline;">剩餘 ${remaining} 天</span> (${remaining <= 0 ? '目前無剩餘補休' : '剩餘天數不足'})`;
+            } else {
+                badgeContainer.style.background = 'rgba(56, 189, 248, 0.12)';
+                badgeContainer.style.borderColor = 'rgba(56, 189, 248, 0.35)';
+                badgeContainer.style.color = '#38bdf8';
+                textEl.innerHTML = `📍 <strong>${name}</strong> 的 Google 補休：總額度 <strong>${quota}</strong> 天 | 已扣除 <strong>${used}</strong> 天 | 實際剩餘 <strong>${remaining}</strong> 天`;
+            }
+        }
+
         // Show Add Leave Modal
         function showAddLeaveModal() {
-            ensureAdminUnlocked(() => {
+            ensureAdminUnlocked(async () => {
+                await refreshMemberLocationMap();
                 const today = new Date();
                 const ym = document.getElementById('monthSelect').value || `${today.getFullYear()}/${String(today.getMonth() + 1).padStart(2, '0')}`;
                 const defaultDate = `${ym}/01`;
@@ -1889,6 +1959,7 @@
                 document.getElementById('modalLeaveType').value = '黑假';
                 document.getElementById('modalDuration').value = '1天';
 
+                updateModalCompBadge();
                 document.getElementById('editPreviewModal').classList.add('show');
             });
         }
@@ -1929,6 +2000,7 @@
                 document.getElementById('modalSpecialReason').value = r.special_reason || '';
                 document.getElementById('modalSpecialReasonGroup').style.display = isSpecial ? 'block' : 'none';
 
+                updateModalCompBadge();
                 document.getElementById('editPreviewModal').classList.add('show');
             });
         }
@@ -1936,6 +2008,7 @@
         // Open Leave Edit Modal for saved DB records
         function openLeaveEditModal(recId) {
             ensureAdminUnlocked(async () => {
+                await refreshMemberLocationMap();
                 const res = await fetch(`/api/leaves/${recId}`);
                 const r = await res.json();
 
@@ -1955,6 +2028,7 @@
                 document.getElementById('modalLeaveType').value = r.leave_type || '黑假';
                 document.getElementById('modalDuration').value = r.duration || '1天';
 
+                updateModalCompBadge();
                 document.getElementById('editPreviewModal').classList.add('show');
             });
         }
@@ -2231,10 +2305,16 @@
             if (histSelect) histSelect.innerHTML = '';
 
             memberLocationMap = {};
+            memberQuotaMap = {};
 
             members.forEach(m => {
                 const loc = m.location || '台灣辦公室';
+                const quota = m.google_comp_quota || 0.0;
+                const used = m.google_comp_used || 0.0;
+                const remaining = m.google_comp_remaining !== undefined ? m.google_comp_remaining : round(quota - used, 2);
+
                 memberLocationMap[m.name] = loc;
+                memberQuotaMap[m.name] = { quota, used, remaining };
 
                 if (histSelect) {
                     const opt = document.createElement('option');
@@ -2248,6 +2328,10 @@
                     ? `<span class="badge" style="background:rgba(245,158,11,0.2);color:#fcd34d;border:1px solid rgba(245,158,11,0.4)"><i class="fa-solid fa-industry"></i> 工廠 (19:00加班)</span>`
                     : `<span class="badge badge-ot"><i class="fa-solid fa-building"></i> 非工廠 (20:00加班)</span>`;
 
+                const remainingBadge = remaining > 0
+                    ? `<span class="badge" style="background:rgba(56,189,248,0.15);color:#38bdf8;border:1px solid rgba(56,189,248,0.35);"><i class="fa-solid fa-clock"></i> 剩 ${remaining} 天</span>`
+                    : `<span class="badge" style="background:rgba(239,68,68,0.15);color:#fca5a5;border:1px solid rgba(239,68,68,0.35);"><i class="fa-solid fa-triangle-exclamation"></i> 剩 ${remaining} 天</span>`;
+
                 const optHtml = locationOptions.map(o => 
                     `<option value="${o}" ${o === loc ? 'selected' : ''}>${o}</option>`
                 ).join('');
@@ -2260,6 +2344,14 @@
                             ${optHtml}
                         </select>
                     </td>
+                    <td>
+                        <div style="display:flex; align-items:center; gap:4px;">
+                            <input type="number" step="0.5" value="${quota}" onchange="updateMemberQuota(${m.id}, this.value)" style="width: 75px; padding: 3px 6px; font-size: 0.83rem;" title="雙擊或輸入數字修改總額度">
+                            <span style="font-size:0.8rem; color:var(--text-muted);">天</span>
+                        </div>
+                    </td>
+                    <td>${used} 天</td>
+                    <td>${remainingBadge}</td>
                     <td>${classBadge}</td>
                     <td>
                         <button class="action-btn delete" onclick="deleteMember(${m.id})"><i class="fa-solid fa-trash"></i> 刪除</button>
@@ -2437,13 +2529,35 @@
             });
         }
 
+        // Update Member Quota
+        function updateMemberQuota(id, value) {
+            ensureAdminUnlocked(async () => {
+                const quota = parseFloat(value || 0);
+                const res = await fetch(`/api/members/${id}/quota`, {
+                    method: 'PUT',
+                    headers: getAuthHeaders(),
+                    body: JSON.stringify({ google_comp_quota: quota })
+                });
+                if (res.ok) {
+                    showToast('已更新 Google 補休總額度');
+                    await loadMembers();
+                    await loadStats();
+                } else {
+                    const err = await res.json();
+                    alert(err.message || '更新失敗');
+                }
+            });
+        }
+
         // Add Member
         function addMember() {
             ensureAdminUnlocked(async () => {
                 const input = document.getElementById('newMemberName');
                 const locSelect = document.getElementById('newMemberLocation');
+                const quotaInput = document.getElementById('newMemberQuota');
                 const name = input.value.trim();
                 const location = locSelect ? locSelect.value : '台灣辦公室';
+                const google_comp_quota = quotaInput ? parseFloat(quotaInput.value || 0) : 0;
 
                 if (!name) {
                     alert('請輸入成員姓名');
@@ -2453,14 +2567,16 @@
                 const res = await fetch('/api/members', {
                     method: 'POST',
                     headers: getAuthHeaders(),
-                    body: JSON.stringify({ name, location })
+                    body: JSON.stringify({ name, location, google_comp_quota })
                 });
 
                 if (res.ok) {
                     showToast(`已新增成員：${name} (${location})`);
                     input.value = '';
+                    if (quotaInput) quotaInput.value = '0';
                     await loadMembers();
                     await loadOvertime();
+                    await loadStats();
                 } else {
                     const err = await res.json();
                     alert(err.message || '新增失敗');

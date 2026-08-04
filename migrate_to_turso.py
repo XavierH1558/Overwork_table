@@ -101,6 +101,7 @@ def migrate():
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             name TEXT UNIQUE NOT NULL,
             location TEXT DEFAULT '台灣辦公室',
+            google_comp_quota REAL DEFAULT 0.0,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )''',
         '''CREATE TABLE IF NOT EXISTS member_location_history (

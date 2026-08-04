@@ -156,15 +156,18 @@ def init_db():
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 name TEXT UNIQUE NOT NULL,
                 location TEXT DEFAULT '台灣辦公室',
+                google_comp_quota REAL DEFAULT 0.0,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         ''')
         
-        # Check if location column exists for existing table
+        # Check if location / google_comp_quota columns exist for existing table
         cursor.execute("PRAGMA table_info(team_members)")
         cols = [r[1] for r in cursor.fetchall()]
         if 'location' not in cols:
             cursor.execute("ALTER TABLE team_members ADD COLUMN location TEXT DEFAULT '台灣辦公室'")
+        if 'google_comp_quota' not in cols:
+            cursor.execute("ALTER TABLE team_members ADD COLUMN google_comp_quota REAL DEFAULT 0.0")
 
         # Check if is_special / special_reason columns exist in overtime_records
         cursor.execute("PRAGMA table_info(overtime_records)")
@@ -191,7 +194,7 @@ def init_db():
         if cursor.fetchone()[0] == 0:
             default_members = ["Benny", "Daniel", "Eden", "YiWen", "Xavier", "Winnie", "Kevin", "Cora", "Benson", "Jim", "Rell"]
             for m in default_members:
-                cursor.execute('INSERT OR IGNORE INTO team_members (name, location) VALUES (?, ?)', (m, '台灣辦公室'))
+                cursor.execute('INSERT OR IGNORE INTO team_members (name, location, google_comp_quota) VALUES (?, ?, ?)', (m, '台灣辦公室', 0.0))
 
         conn.commit()
 
@@ -199,9 +202,27 @@ def init_db():
 def get_all_members():
     with get_connection() as conn:
         cursor = conn.cursor()
-        cursor.execute("SELECT id, name, COALESCE(location, '台灣辦公室') as location FROM team_members ORDER BY name ASC")
+        cursor.execute("SELECT id, name, COALESCE(location, '台灣辦公室') as location, COALESCE(google_comp_quota, 0.0) as google_comp_quota FROM team_members ORDER BY name ASC")
         rows = cursor.fetchall()
-        return [dict(r) for r in rows]
+        
+        cursor.execute("SELECT name, SUM(COALESCE(google_comp_days, 0.0)) as used FROM leave_records GROUP BY LOWER(name)")
+        used_map = {}
+        for r in cursor.fetchall():
+            used_map[str(r['name']).lower()] = float(r['used'] or 0.0)
+
+        results = []
+        for r in rows:
+            m_dict = dict(r)
+            m_name = m_dict['name']
+            quota = float(m_dict.get('google_comp_quota') or 0.0)
+            used = used_map.get(m_name.lower(), 0.0)
+            remaining = round(quota - used, 2)
+            m_dict['google_comp_quota'] = quota
+            m_dict['google_comp_used'] = round(used, 2)
+            m_dict['google_comp_remaining'] = remaining
+            results.append(m_dict)
+            
+        return results
 
 
 def get_member_location_map():
@@ -303,15 +324,19 @@ def get_member_location_at_date(name, date_str):
 
 
 
-def add_member(name, location='台灣辦公室'):
+def add_member(name, location='台灣辦公室', google_comp_quota=0.0):
     name = name.strip()
     if not name:
         return None
     if not location:
         location = '台灣辦公室'
+    try:
+        quota = float(google_comp_quota or 0.0)
+    except (ValueError, TypeError):
+        quota = 0.0
     with get_connection() as conn:
         cursor = conn.cursor()
-        cursor.execute('INSERT OR IGNORE INTO team_members (name, location) VALUES (?, ?)', (name, location))
+        cursor.execute('INSERT OR IGNORE INTO team_members (name, location, google_comp_quota) VALUES (?, ?, ?)', (name, location, quota))
         conn.commit()
         return cursor.lastrowid
 
@@ -320,6 +345,17 @@ def update_member_location(member_id, location):
     with get_connection() as conn:
         cursor = conn.cursor()
         cursor.execute('UPDATE team_members SET location=? WHERE id=?', (location, member_id))
+        conn.commit()
+
+
+def update_member_quota(member_id, google_comp_quota):
+    try:
+        quota = float(google_comp_quota or 0.0)
+    except (ValueError, TypeError):
+        quota = 0.0
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute('UPDATE team_members SET google_comp_quota=? WHERE id=?', (quota, member_id))
         conn.commit()
 
 
@@ -895,6 +931,16 @@ def get_monthly_stats(month=None):
                     label = f"{lt} {d_str}"
                 leave_breakdown.append({"type": lt, "label": label})
 
+            # Calculate overall Google comp quota and remaining
+            cursor.execute("SELECT COALESCE(google_comp_quota, 0.0) FROM team_members WHERE LOWER(name) = LOWER(?)", (name,))
+            m_row = cursor.fetchone()
+            m_quota = float(m_row[0] or 0.0) if m_row else 0.0
+
+            cursor.execute("SELECT SUM(COALESCE(google_comp_days, 0.0)) FROM leave_records WHERE LOWER(name) = LOWER(?)", (name,))
+            u_row = cursor.fetchone()
+            m_used_overall = float(u_row[0] or 0.0) if u_row else 0.0
+            m_remaining = round(m_quota - m_used_overall, 2)
+
             stats_list.append({
                 "name": name,
                 "location": get_member_location_at_date(name, f"{month or '2026/07'}/15"),
@@ -912,7 +958,10 @@ def get_monthly_stats(month=None):
                 "black_days": black_days,
                 "wfh_days": wfh_days,
                 "business_count": business_count,
-                "google_comp_total": round(google_comp_total, 2)
+                "google_comp_total": round(google_comp_total, 2),
+                "google_comp_quota": m_quota,
+                "google_comp_used_total": round(m_used_overall, 2),
+                "google_comp_remaining": m_remaining
             })
 
         return {
