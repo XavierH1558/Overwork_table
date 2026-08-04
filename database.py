@@ -233,10 +233,10 @@ def get_all_members():
             quota = float(m_dict.get('google_comp_quota') or 0.0)
             used = used_map.get(m_name.lower(), 0.0)
             pending = pending_map.get(m_name.lower(), 0.0)
-            remaining = round(quota - used, 2)
+            remaining = quota - used
             m_dict['google_comp_quota'] = quota
-            m_dict['google_comp_used'] = round(used, 2)
-            m_dict['google_comp_pending'] = round(pending, 2)
+            m_dict['google_comp_used'] = used
+            m_dict['google_comp_pending'] = pending
             m_dict['google_comp_remaining'] = remaining
             results.append(m_dict)
             
@@ -973,7 +973,7 @@ def get_monthly_stats(month=None):
             u_row = cursor.fetchone()
             m_used_overall = float(u_row[0] or 0.0) if u_row else 0.0
             m_pending_overall = float(u_row[1] or 0.0) if u_row else 0.0
-            m_remaining = round(m_quota - m_used_overall, 2)
+            m_remaining = m_quota - m_used_overall
 
             stats_list.append({
                 "name": name,
@@ -992,10 +992,10 @@ def get_monthly_stats(month=None):
                 "black_days": black_days,
                 "wfh_days": wfh_days,
                 "business_count": business_count,
-                "google_comp_total": round(google_comp_total, 2),
+                "google_comp_total": google_comp_total,
                 "google_comp_quota": m_quota,
-                "google_comp_used_total": round(m_used_overall, 2),
-                "google_comp_pending_total": round(m_pending_overall, 2),
+                "google_comp_used_total": m_used_overall,
+                "google_comp_pending_total": m_pending_overall,
                 "google_comp_remaining": m_remaining
             })
 

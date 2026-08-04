@@ -830,7 +830,7 @@
                             <option value="美國LAB">美國LAB</option>
                             <option value="墨西哥GDL工廠">墨西哥GDL工廠</option>
                         </select>
-                        <input type="number" step="0.5" id="newMemberQuota" placeholder="補休總額度(天)..." style="width: 130px;" value="0">
+                        <input type="number" step="any" id="newMemberQuota" placeholder="補休總額度(天)..." style="width: 130px;" value="0">
                         <button class="btn btn-primary" onclick="addMember()">
                             <i class="fa-solid fa-user-plus"></i> 新增成員
                         </button>
@@ -2461,7 +2461,7 @@
                 const loc = m.location || '台灣辦公室';
                 const quota = m.google_comp_quota || 0.0;
                 const used = m.google_comp_used || 0.0;
-                const remaining = m.google_comp_remaining !== undefined ? m.google_comp_remaining : round(quota - used, 2);
+                const remaining = m.google_comp_remaining !== undefined ? m.google_comp_remaining : (quota - used);
 
                 memberLocationMap[m.name] = loc;
                 memberQuotaMap[m.name] = { quota, used, remaining };
@@ -2496,7 +2496,7 @@
                     </td>
                     <td>
                         <div style="display:flex; align-items:center; gap:4px;">
-                            <input type="number" step="0.5" value="${quota}" onchange="updateMemberQuota(${m.id}, this.value)" style="width: 75px; padding: 3px 6px; font-size: 0.83rem;" title="雙擊或輸入數字修改總額度">
+                            <input type="number" step="any" value="${quota}" onchange="updateMemberQuota(${m.id}, this.value)" style="width: 90px; padding: 3px 6px; font-size: 0.83rem;" title="雙擊或輸入數字修改總額度">
                             <span style="font-size:0.8rem; color:var(--text-muted);">天</span>
                         </div>
                     </td>
