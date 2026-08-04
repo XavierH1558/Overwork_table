@@ -1268,10 +1268,14 @@
             const htmlStr = optionsHtml.join('');
             if (headerSelect) headerSelect.innerHTML = htmlStr;
 
-            // Default select current month based on system time if available
+            // Default select saved month from localStorage or current system month (e.g. 2026/08)
+            const savedYm = localStorage.getItem('selectedMonth');
             const currentYm = `${currentYear}/${String(currentMonth).padStart(2, '0')}`;
+            const hasSavedMonth = savedYm && headerSelect && Array.from(headerSelect.options).some(opt => opt.value === savedYm);
             const hasCurrentMonth = headerSelect && Array.from(headerSelect.options).some(opt => opt.value === currentYm);
-            const defaultYm = hasCurrentMonth ? currentYm : (headerSelect && headerSelect.options[0] ? headerSelect.options[0].value : '2026/07');
+            
+            const defaultYm = hasSavedMonth ? savedYm : (hasCurrentMonth ? currentYm : '2026/08');
+            
             syncMonthSelect(defaultYm);
             
             // Set default parse year inputs to current year
@@ -1286,6 +1290,8 @@
         async function syncMonthSelect(val) {
             const el = document.getElementById('monthSelect');
             if (el) el.value = val;
+            
+            localStorage.setItem('selectedMonth', val);
 
             const parts = val.split('/');
             const monthText = parts.length === 2 ? `${parts[0]}年${parts[1]}月` : val;
