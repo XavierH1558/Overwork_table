@@ -199,9 +199,21 @@ def init_db():
         # Populate initial default members if table is empty
         cursor.execute('SELECT COUNT(*) FROM team_members')
         if cursor.fetchone()[0] == 0:
-            default_members = ["Benny", "Daniel", "Eden", "YiWen", "Xavier", "Winnie", "Kevin", "Cora", "Benson", "Jim", "Rell"]
-            for m in default_members:
-                cursor.execute('INSERT OR IGNORE INTO team_members (name, location, google_comp_quota) VALUES (?, ?, ?)', (m, '台灣辦公室', 0.0))
+            default_members = [
+                ("Benny", "台灣辦公室", 16.71875),
+                ("Eden", "台灣辦公室", 3.4375),
+                ("Cora", "台灣辦公室", 2.15625),
+                ("Xavier", "台灣辦公室", 4.0),
+                ("Benson", "台灣辦公室", 0.65625),
+                ("Daniel", "台灣辦公室", 0.5625),
+                ("YiWen", "台灣辦公室", 0.0),
+                ("Winnie", "台灣辦公室", 0.0),
+                ("Kevin", "台灣辦公室", 0.0),
+                ("Jim", "台灣辦公室", 0.0),
+                ("Rell", "台灣辦公室", 0.0)
+            ]
+            for m_name, m_loc, m_quota in default_members:
+                cursor.execute('INSERT OR IGNORE INTO team_members (name, location, google_comp_quota) VALUES (?, ?, ?)', (m_name, m_loc, m_quota))
 
         conn.commit()
 
@@ -965,14 +977,28 @@ def get_monthly_stats(month=None):
             m_quota = float(m_row[0] or 0.0) if m_row else 0.0
 
             cursor.execute("""
-                SELECT 
-                    SUM(CASE WHEN COALESCE(is_comp_deducted, 1) = 1 THEN COALESCE(google_comp_days, 0.0) ELSE 0 END) as used,
-                    SUM(CASE WHEN COALESCE(is_comp_deducted, 1) = 0 THEN COALESCE(google_comp_days, 0.0) ELSE 0 END) as pending
-                FROM leave_records WHERE LOWER(name) = LOWER(?)
+                SELECT date, leave_type, duration, google_comp_days, COALESCE(is_comp_deducted, 1) as is_comp_deducted, reason
+                FROM leave_records 
+                WHERE LOWER(name) = LOWER(?) AND COALESCE(google_comp_days, 0) > 0
+                ORDER BY date ASC
             """, (name,))
-            u_row = cursor.fetchone()
-            m_used_overall = float(u_row[0] or 0.0) if u_row else 0.0
-            m_pending_overall = float(u_row[1] or 0.0) if u_row else 0.0
+            comp_rows = cursor.fetchall()
+            
+            deducted_records = []
+            pending_records = []
+            m_used_overall = 0.0
+            m_pending_overall = 0.0
+
+            for cr in comp_rows:
+                c_dict = dict(cr)
+                c_days = float(c_dict.get('google_comp_days') or 0.0)
+                if c_dict.get('is_comp_deducted') == 1:
+                    m_used_overall += c_days
+                    deducted_records.append(f"{c_dict['date']} {c_dict['leave_type']} {c_days}天")
+                else:
+                    m_pending_overall += c_days
+                    pending_records.append(f"{c_dict['date']} {c_dict['leave_type']} {c_days}天")
+
             m_remaining = m_quota - m_used_overall
 
             stats_list.append({
@@ -996,7 +1022,9 @@ def get_monthly_stats(month=None):
                 "google_comp_quota": m_quota,
                 "google_comp_used_total": m_used_overall,
                 "google_comp_pending_total": m_pending_overall,
-                "google_comp_remaining": m_remaining
+                "google_comp_remaining": m_remaining,
+                "google_comp_deducted_details": deducted_records,
+                "google_comp_pending_details": pending_records
             })
 
         return {
