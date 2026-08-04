@@ -367,12 +367,17 @@
 
         .tab-content {
             display: none;
+            opacity: 0;
+            transform: translateY(6px);
+            transition: opacity 0.22s ease-in-out, transform 0.22s ease-in-out;
         }
 
         .tab-content.active {
             display: flex;
             flex-direction: column;
             gap: 1.5rem;
+            opacity: 1;
+            transform: translateY(0);
         }
 
         /* Action Buttons in Table */
@@ -1231,15 +1236,20 @@
             if (document.getElementById('parseImageYear')) document.getElementById('parseImageYear').value = currentYear;
         }
 
-        // Sync month selector across tabs
-        function syncMonthSelect(val) {
+        // Sync month selector across tabs with smooth transitions & toast feedback
+        async function syncMonthSelect(val) {
             const el = document.getElementById('monthSelect');
             if (el) el.value = val;
-            loadData();
+
+            const parts = val.split('/');
+            const monthText = parts.length === 2 ? `${parts[0]}年${parts[1]}月` : val;
+            showToast(`📅 已切換至 [${monthText}] 數據資料`);
+
+            await loadData();
         }
 
-        // Tab Navigation
-        function switchTab(tabId) {
+        // Tab Navigation with smooth transition
+        async function switchTab(tabId) {
             document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
             document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
 
@@ -1247,12 +1257,22 @@
             if (targetBtn) targetBtn.classList.add('active');
 
             const targetContent = document.getElementById(`tab-${tabId}`);
-            if (targetContent) targetContent.classList.add('active');
+            if (targetContent) {
+                targetContent.classList.add('active');
+                targetContent.style.opacity = '0.4';
+                targetContent.style.transform = 'translateY(6px)';
 
-            if (tabId === 'dashboard') loadStats();
-            if (tabId === 'overtime') loadOvertime();
-            if (tabId === 'leaves') loadLeaves();
-            if (tabId === 'members') loadMembers();
+                const promises = [];
+                if (tabId === 'dashboard') promises.push(loadStats());
+                if (tabId === 'overtime') promises.push(loadOvertime());
+                if (tabId === 'leaves') promises.push(loadLeaves());
+                if (tabId === 'members') promises.push(loadMembers());
+
+                await Promise.all(promises);
+
+                targetContent.style.opacity = '1';
+                targetContent.style.transform = 'translateY(0)';
+            }
         }
 
         // Show Toast
@@ -1263,12 +1283,26 @@
             setTimeout(() => toast.classList.remove('show'), 3000);
         }
 
-        // Load All Data
-        function loadData() {
-            const activeTab = document.querySelector('.tab-content.active') ? document.querySelector('.tab-content.active').id : 'tab-dashboard';
-            loadStats();
-            if (activeTab === 'tab-overtime') loadOvertime();
-            if (activeTab === 'tab-leaves') loadLeaves();
+        // Load All Data in parallel with smooth fade transition
+        async function loadData() {
+            const activeTabContent = document.querySelector('.tab-content.active');
+            if (activeTabContent) {
+                activeTabContent.style.opacity = '0.35';
+                activeTabContent.style.transform = 'translateY(4px)';
+            }
+
+            const activeTabId = activeTabContent ? activeTabContent.id : 'tab-dashboard';
+
+            const promises = [loadStats()];
+            if (activeTabId === 'tab-overtime') promises.push(loadOvertime());
+            if (activeTabId === 'tab-leaves') promises.push(loadLeaves());
+
+            await Promise.all(promises);
+
+            if (activeTabContent) {
+                activeTabContent.style.opacity = '1';
+                activeTabContent.style.transform = 'translateY(0)';
+            }
         }
 
         // Load Stats & Summary Table
