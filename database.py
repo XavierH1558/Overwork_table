@@ -853,6 +853,8 @@ def get_monthly_stats(month=None):
         team_total_hours = 0.0
         team_weekday_hours = 0.0
         team_weekend_hours = 0.0
+        team_est_comp_hours = 0.0
+        team_est_comp_days = 0.0
         
         for name in names:
             # Overtime breakdown: query all overtime records for this member
@@ -1000,6 +1002,13 @@ def get_monthly_stats(month=None):
                     pending_records.append(f"{c_dict['date']} {c_dict['leave_type']} {c_days}天")
 
             m_remaining = m_quota - m_used_overall
+            
+            # Estimated new Google comp leave earned from this month's overtime (Weekday x 1.5, Weekend x 2.0)
+            est_comp_hours = (weekday_ot_hours * 1.5) + (weekend_ot_hours * 2.0)
+            est_comp_days = est_comp_hours / 8.0
+            
+            team_est_comp_hours += est_comp_hours
+            team_est_comp_days += est_comp_days
 
             stats_list.append({
                 "name": name,
@@ -1010,6 +1019,8 @@ def get_monthly_stats(month=None):
                 "weekday_ot_hours": round(weekday_ot_hours, 2),
                 "weekend_ot_hours": round(weekend_ot_hours, 2),
                 "overtime_hours": round(ot_hours, 2),
+                "est_comp_hours": est_comp_hours,
+                "est_comp_days": est_comp_days,
                 "special_ot_count": special_ot_count,
                 "special_reasons": list(dict.fromkeys(special_reasons_list)),
                 "leave_breakdown": leave_breakdown,
@@ -1031,5 +1042,7 @@ def get_monthly_stats(month=None):
             "stats": stats_list,
             "team_total_hours": round(team_total_hours, 2),
             "team_weekday_hours": round(team_weekday_hours, 2),
-            "team_weekend_hours": round(team_weekend_hours, 2)
+            "team_weekend_hours": round(team_weekend_hours, 2),
+            "team_est_comp_hours": team_est_comp_hours,
+            "team_est_comp_days": team_est_comp_days
         }

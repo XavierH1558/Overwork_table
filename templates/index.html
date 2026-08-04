@@ -572,6 +572,14 @@
                         <div class="stat-value" id="stat-total-ot">0.0 小時</div>
                     </div>
                 </div>
+                <div class="stat-card" style="border-left: 4px solid #22c55e;">
+                    <div class="stat-icon" style="background: rgba(34, 197, 94, 0.15); color: #4ade80;"><i class="fa-solid fa-calculator"></i></div>
+                    <div class="stat-info">
+                        <h4 id="statEstCompTitle">當月加班預估可獲補休</h4>
+                        <div class="stat-value" id="stat-est-comp" style="color: #4ade80; font-size: 1.25rem; font-weight: 700;">+0.0 天 (+0.0h)</div>
+                        <div style="font-size: 0.72rem; color: var(--text-muted); margin-top: 2px;">💡 平日OT×1.5 | 假日OT×2.0</div>
+                    </div>
+                </div>
                 <div class="stat-card">
                     <div class="stat-icon icon-lv"><i class="fa-solid fa-plane-departure"></i></div>
                     <div class="stat-info">
@@ -605,6 +613,7 @@
                                 <th>加班總數</th>
                                 <th>平日加班 (hr)</th>
                                 <th>假日 / 特殊 (hr)</th>
+                                <th>本月預估新增補休</th>
                                 <th>特殊狀況標記</th>
                                 <th>請假總數</th>
                                 <th>請假假別組成明細</th>
@@ -1397,6 +1406,9 @@
             const leaveTitle = document.getElementById('statLeaveTitle');
             if (leaveTitle) leaveTitle.innerHTML = `<span style="color:#38bdf8;font-size:0.9rem;font-weight:600;">${monthZh}</span> 請假總筆數`;
 
+            const estTitleEl = document.getElementById('statEstCompTitle');
+            if (estTitleEl) estTitleEl.innerHTML = `<span style="color:#4ade80;font-size:0.9rem;font-weight:600;">${monthZh}</span> 加班預估可獲補休`;
+
             const res = await fetch(`/api/stats?month=${encodeURIComponent(month)}`);
             const data = await res.json();
 
@@ -1404,6 +1416,8 @@
             let totalOt = data.team_total_hours || 0;
             let teamWeekday = data.team_weekday_hours || 0;
             let teamWeekend = data.team_weekend_hours || 0;
+            let teamEstHours = data.team_est_comp_hours || 0;
+            let teamEstDays = data.team_est_comp_days || 0;
             let totalLeave = 0;
 
             const tbody = document.getElementById('summaryTableBody');
@@ -1413,6 +1427,8 @@
                 const otCount = item.ot_count !== undefined ? item.ot_count : 0;
                 const weekdayOt = item.weekday_ot_hours !== undefined ? item.weekday_ot_hours : 0;
                 const weekendOt = item.weekend_ot_hours !== undefined ? item.weekend_ot_hours : 0;
+                const estHours = item.est_comp_hours !== undefined ? item.est_comp_hours : 0;
+                const estDays = item.est_comp_days !== undefined ? item.est_comp_days : 0;
                 const spCount = item.special_ot_count || 0;
                 const spReasons = (item.special_reasons || []).join(', ');
 
@@ -1429,6 +1445,11 @@
                 const weekendBadge = weekendOt > 0 
                     ? `<span class="badge" style="background:rgba(245,158,11,0.2);color:#fcd34d;border:1px solid rgba(245,158,11,0.4);">${weekendOt} hr</span>` 
                     : `<span style="color: var(--text-muted); font-size: 0.9rem;">0.0 hr</span>`;
+
+                const estTitle = `當月加班預估換算補休細節：\n• 平日加班：${weekdayOt}h × 1.5 = ${weekdayOt * 1.5}h\n• 假日加班：${weekendOt}h × 2.0 = ${weekendOt * 2.0}h\n• 總換算補休：${estHours}h / 8 = ${estDays}天`;
+                const estBadge = estHours > 0 
+                    ? `<span class="badge" style="background:rgba(34,197,94,0.18);color:#4ade80;border:1px solid rgba(34,197,94,0.35);cursor:help;" title="${estTitle}"><i class="fa-solid fa-plus"></i> ${estDays} 天 <span style="font-size:0.75rem;opacity:0.85;">(+${estHours}h)</span></span>`
+                    : `<span style="color:var(--text-muted);font-size:0.88rem;">-</span>`;
 
                 const leaveBreakdown = item.leave_breakdown || [];
                 let leaveDetailHtml = '-';
@@ -1469,16 +1490,17 @@
                     locDetailHtml = `<span class="badge" style="background:rgba(148,163,184,0.15);color:#cbd5e1;">📍 ${item.location || '-'}</span>`;
                 }
 
-                const mQuota = item.google_comp_quota !== undefined ? item.google_comp_quota : 0;
-                const mUsed = item.google_comp_used_total !== undefined ? item.google_comp_used_total : 0;
-                const mPending = item.google_comp_pending_total !== undefined ? item.google_comp_pending_total : 0;
-                const mRem = item.google_comp_remaining !== undefined ? item.google_comp_remaining : (mQuota - mUsed);
+                const deductedDetails = (item.google_comp_deducted_details || []).join('\n');
+                const pendingDetails = (item.google_comp_pending_details || []).join('\n');
+                
+                const usedTitle = deductedDetails ? `title="累計已扣補休紀錄明細：\n${deductedDetails}" style="cursor:help; border-bottom:1px dashed rgba(255,255,255,0.4);"` : '';
+                const pendingTitle = pendingDetails ? `title="待扣補休紀錄明細：\n${pendingDetails}" style="cursor:help; border-bottom:1px dashed rgba(245,158,11,0.5);"` : '';
 
                 const compStyle = mRem > 0 ? 'color: #38bdf8; font-weight: bold;' : 'color: #ef4444; font-weight: bold;';
-                const pendingInfo = mPending > 0 ? ` <span style="color:#fcd34d; font-size:0.75rem; white-space:nowrap;">(待扣 ${mPending}天)</span>` : '';
+                const pendingInfo = mPending > 0 ? ` <span style="color:#fcd34d; font-size:0.75rem; white-space:nowrap;" ${pendingTitle}>(待扣 ${mPending}天)</span>` : '';
 
                 const compDisplay = mQuota > 0 
-                    ? `<div><strong>${googleComp} 天</strong>${pendingInfo}</div><div style="font-size: 0.78rem; color: var(--text-muted); margin-top:2px;">總額 ${mQuota}天 | 已扣 ${mUsed}天 | <span style="${compStyle}">最新剩 ${mRem}天</span></div>` 
+                    ? `<div><strong>${googleComp} 天</strong>${pendingInfo}</div><div style="font-size: 0.78rem; color: var(--text-muted); margin-top:2px;">總額 ${mQuota}天 | <span ${usedTitle}>已扣 ${mUsed}天</span> | <span style="${compStyle}">最新剩 ${mRem}天</span></div>` 
                     : `<div><strong>${googleComp} 天</strong>${pendingInfo}</div>`;
 
                 const tr = document.createElement('tr');
@@ -1488,6 +1510,7 @@
                     <td>${otCount} 筆</td>
                     <td><span class="badge badge-ot">${weekdayOt} hr</span></td>
                     <td>${weekendBadge}</td>
+                    <td>${estBadge}</td>
                     <td>${spDisplay}</td>
                     <td>${leaveCount} 筆</td>
                     <td>${leaveDetailHtml}</td>
@@ -1498,6 +1521,11 @@
 
             document.getElementById('stat-total-ot').innerHTML = `${totalOt.toFixed(1)} <span style="font-size:0.85rem;font-weight:normal;color:var(--text-muted);">(平日${teamWeekday.toFixed(1)}h / 假日${teamWeekend.toFixed(1)}h)</span>`;
             document.getElementById('stat-total-leave').textContent = `${totalLeave} 筆`;
+            
+            const statEstComp = document.getElementById('stat-est-comp');
+            if (statEstComp) {
+                statEstComp.textContent = `+${teamEstDays} 天 (+${teamEstHours}h)`;
+            }
             document.getElementById('stat-member-count').textContent = `${statsList.length} 人`;
         }
 
