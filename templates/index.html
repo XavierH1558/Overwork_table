@@ -1454,7 +1454,7 @@
 
                 const estTitle = `當月加班預估換算補休細節：\n• 平日加班：${weekdayOt}h × 1.5 = ${weekdayOt * 1.5}h\n• 假日加班：${weekendOt}h × 2.0 = ${weekendOt * 2.0}h\n• 總換算補休：${estHours}h / 8 = ${estDays}天`;
                 const estBadge = estHours > 0 
-                    ? `<span class="badge" style="background:rgba(34,197,94,0.18);color:#4ade80;border:1px solid rgba(34,197,94,0.35);cursor:help;" title="${estTitle}"><i class="fa-solid fa-plus"></i> ${estDays} 天 <span style="font-size:0.75rem;opacity:0.85;">(+${estHours}h)</span></span>`
+                    ? `<span class="badge" style="background:rgba(34,197,94,0.18);color:#4ade80;border:1px solid rgba(34,197,94,0.35);cursor:pointer;" title="${estTitle}"><i class="fa-solid fa-plus"></i> ${estDays} 天 <span style="font-size:0.75rem;opacity:0.85;">(+${estHours}h)</span></span>`
                     : `<span style="color:var(--text-muted);font-size:0.88rem;">-</span>`;
 
                 const leaveBreakdown = item.leave_breakdown || [];
@@ -1504,8 +1504,8 @@
                 const deductedDetails = (item.google_comp_deducted_details || []).join('\n');
                 const pendingDetails = (item.google_comp_pending_details || []).join('\n');
                 
-                const usedTitle = deductedDetails ? `title="累計已扣補休紀錄明細：\n${deductedDetails}" style="cursor:help; border-bottom:1px dashed rgba(255,255,255,0.4);"` : '';
-                const pendingTitle = pendingDetails ? `title="待扣補休紀錄明細：\n${pendingDetails}" style="cursor:help; border-bottom:1px dashed rgba(245,158,11,0.5);"` : '';
+                const usedTitle = deductedDetails ? `title="累計已扣補休紀錄明細：\n${deductedDetails}" style="cursor:pointer; border-bottom:1px dashed rgba(255,255,255,0.4);"` : '';
+                const pendingTitle = pendingDetails ? `title="待扣補休紀錄明細：\n${pendingDetails}" style="cursor:pointer; border-bottom:1px dashed rgba(245,158,11,0.5);"` : '';
 
                 const compStyle = mRem > 0 ? 'color: #38bdf8; font-weight: bold;' : 'color: #ef4444; font-weight: bold;';
                 const pendingInfo = mPending > 0 ? ` <span style="color:#fcd34d; font-size:0.75rem; white-space:nowrap;" ${pendingTitle}>(待扣 ${mPending}天)</span>` : '';
