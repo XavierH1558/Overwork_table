@@ -21,7 +21,11 @@ LEAVE_META = {
     "出勤確認": {"type": "出勤確認", "google_comp": 0.0},
     "未刷卡": {"type": "出勤確認", "google_comp": 0.0},
     "忘了帶卡": {"type": "出勤確認", "google_comp": 0.0},
+    "忘了刷卡": {"type": "出勤確認", "google_comp": 0.0},
+    "忘刷卡": {"type": "出勤確認", "google_comp": 0.0},
+    "沒刷卡": {"type": "出勤確認", "google_comp": 0.0},
     "待補出勤確認": {"type": "出勤確認", "google_comp": 0.0},
+    "補出勤確認": {"type": "出勤確認", "google_comp": 0.0},
 }
 
 
@@ -169,7 +173,31 @@ def process_leave_task(task_text, seg_names, fallback_date, default_year=2026):
             clean_reason = re.sub(r'^[,\s，:\-–—~]+|[,\s，:\-–—~]+$', '', clean_reason).strip()
             
             if matched_type == "出勤確認":
-                final_reason = "早上未刷卡，補出勤確認"
+                full_ctx = f"{task_text} {clause}"
+                if "下班" in full_ctx or "晚上" in full_ctx or "下午" in full_ctx or "退勤" in full_ctx:
+                    if "忘了刷卡" in full_ctx or "忘刷卡" in full_ctx or "沒刷卡" in full_ctx:
+                        final_reason = "下班忘了刷卡"
+                    elif "未刷卡" in full_ctx:
+                        final_reason = "下班未刷卡，補出勤確認"
+                    elif clean_reason and re.search(r'[\u4e00-\u9fa5a-zA-Z]', clean_reason):
+                        final_reason = clean_reason if ("下班" in clean_reason or "晚上" in clean_reason) else f"下班{clean_reason}"
+                    else:
+                        final_reason = "下班未刷卡，補出勤確認"
+                elif "上班" in full_ctx or "早上" in full_ctx or "上午" in full_ctx:
+                    if "忘了刷卡" in full_ctx or "忘刷卡" in full_ctx or "沒刷卡" in full_ctx:
+                        final_reason = "上班忘了刷卡"
+                    elif "未刷卡" in full_ctx:
+                        final_reason = "早上未刷卡，補出勤確認"
+                    elif clean_reason and re.search(r'[\u4e00-\u9fa5a-zA-Z]', clean_reason):
+                        final_reason = clean_reason if ("上班" in clean_reason or "早上" in clean_reason) else f"早上{clean_reason}"
+                    else:
+                        final_reason = "早上未刷卡，補出勤確認"
+                elif "忘了帶卡" in full_ctx or "忘帶卡" in full_ctx:
+                    final_reason = "忘了帶卡，待補出勤確認"
+                elif clean_reason and re.search(r'[\u4e00-\u9fa5a-zA-Z]', clean_reason):
+                    final_reason = clean_reason
+                else:
+                    final_reason = "補出勤確認"
             elif is_wfh and (not clean_reason or clean_reason == "-"):
                 final_reason = "WFH"
             elif not re.search(r'[\u4e00-\u9fa5a-zA-Z]', clean_reason):
