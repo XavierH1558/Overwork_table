@@ -238,10 +238,14 @@ def get_all_members():
             used_map[m_lower] = float(r['used'] or 0.0)
             pending_map[m_lower] = float(r['pending'] or 0.0)
 
+        from datetime import datetime
+        today_str = datetime.now().strftime('%Y/%m/%d')
+
         results = []
         for r in rows:
             m_dict = dict(r)
             m_name = m_dict['name']
+            m_dict['location'] = get_member_location_at_date(m_name, today_str)
             quota = float(m_dict.get('google_comp_quota') or 0.0)
             used = used_map.get(m_name.lower(), 0.0)
             pending = pending_map.get(m_name.lower(), 0.0)
