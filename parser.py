@@ -312,20 +312,24 @@ def validate_ot_rule(time_str, reason="", member_name=None, member_locations=Non
     return True, ""
 
 
-def parse_raw_text(text_block, default_year=2026, known_names=None, member_locations=None):
+def parse_raw_text(text_block, default_year=2026, known_names=None, member_locations=None, location_histories=None):
     """
     Parses unstructured multi-line text input into structured overtime, leave records, and warnings.
     Returns: overtime_records, leave_records, warning_records
     """
-    if known_names is None:
+    if known_names is None or location_histories is None:
         try:
             import database
-            db_members = database.get_all_members()
-            known_names = [m['name'] for m in db_members]
+            if known_names is None:
+                db_members = database.get_all_members()
+                known_names = [m['name'] for m in db_members]
             if not member_locations:
                 member_locations = database.get_member_location_map()
+            if location_histories is None:
+                location_histories = database.get_all_member_location_histories()
         except Exception:
-            known_names = KNOWN_NAMES
+            if known_names is None:
+                known_names = KNOWN_NAMES
 
     if not known_names:
         known_names = KNOWN_NAMES
@@ -471,7 +475,14 @@ def parse_raw_text(text_block, default_year=2026, known_names=None, member_locat
                 note = get_weekday_note(current_date)
                 
                 for person in seg_names:
-                    is_rule_ok, rule_warn_msg = validate_ot_rule(norm_time or raw_time_str, reason, member_name=person, member_locations=member_locations)
+                    is_rule_ok, rule_warn_msg = validate_ot_rule(
+                        norm_time or raw_time_str,
+                        reason,
+                        member_name=person,
+                        member_locations=member_locations,
+                        date=current_date,
+                        location_histories=location_histories
+                    )
                     if not is_rule_ok:
                         warning_records.append({
                             "line": line_idx,

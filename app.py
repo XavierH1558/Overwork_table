@@ -80,7 +80,7 @@ def parse_logs():
     member_locs = database.get_member_location_map()
     loc_histories = database.get_all_member_location_histories()
     
-    ot_records, lv_records, warn_records = parser.parse_raw_text(text_block, default_year, member_locations=member_locs)
+    ot_records, lv_records, warn_records = parser.parse_raw_text(text_block, default_year, member_locations=member_locs, location_histories=loc_histories)
     return jsonify({
         "status": "success",
         "overtime_records": ot_records,
@@ -103,7 +103,7 @@ def parse_csv():
     except Exception as e:
         return jsonify({"status": "error", "message": f"檔案讀取失敗: {str(e)}"}), 400
         
-    ot_records, lv_records, warn_records = parser.parse_raw_text(content, default_year, member_locations=member_locs)
+    ot_records, lv_records, warn_records = parser.parse_raw_text(content, default_year, member_locations=member_locs, location_histories=loc_histories)
     return jsonify({
         "status": "success",
         "overtime_records": ot_records,
@@ -151,7 +151,7 @@ def parse_image():
     if os.path.exists(temp_path):
         os.remove(temp_path)
         
-    ot_records, lv_records, warn_records = parser.parse_raw_text(extracted_text, default_year, member_locations=member_locs)
+    ot_records, lv_records, warn_records = parser.parse_raw_text(extracted_text, default_year, member_locations=member_locs, location_histories=loc_histories)
     return jsonify({
         "status": "success",
         "extracted_text": extracted_text,
