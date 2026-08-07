@@ -374,7 +374,14 @@ def add_member(name, location='台灣辦公室', google_comp_quota=0.0):
 def update_member_location(member_id, location):
     with get_connection() as conn:
         cursor = conn.cursor()
-        cursor.execute('UPDATE team_members SET location=? WHERE id=?', (location, member_id))
+        cursor.execute('SELECT name FROM team_members WHERE id=?', (member_id,))
+        row = cursor.fetchone()
+        if row and row['name']:
+            name = row['name']
+            cursor.execute('UPDATE team_members SET location=? WHERE id=?', (location, member_id))
+            cursor.execute('UPDATE member_location_history SET location=? WHERE LOWER(name)=LOWER(?)', (location, name))
+        else:
+            cursor.execute('UPDATE team_members SET location=? WHERE id=?', (location, member_id))
         conn.commit()
 
 

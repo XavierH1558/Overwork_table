@@ -2785,6 +2785,8 @@
                     showToast(`已更新駐點地點：${location}`);
                     await loadMembers();
                     await loadOvertime();
+                    await loadStats();
+                    await refreshMemberLocationMap();
                 } else {
                     const err = await res.json();
                     alert(err.message || '更新失敗');
