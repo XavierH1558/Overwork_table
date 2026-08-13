@@ -298,6 +298,8 @@
             padding: 0.75rem 1rem;
             border-bottom: 1px solid var(--card-border);
             color: var(--text-main);
+            white-space: pre-wrap;
+            word-break: break-word;
         }
 
         tr:last-child td {
@@ -1016,7 +1018,7 @@
                 </div>
                 <div class="form-group" style="grid-column: 1 / -1;">
                     <label>事由</label>
-                    <input type="text" id="modalReason" placeholder="請輸入理由或說明...">
+                    <textarea id="modalReason" rows="2" placeholder="請輸入理由或說明..." style="resize: vertical; font-family: inherit; width: 100%;"></textarea>
                 </div>
                 <!-- 特殊狀況 (only shown for OT records) -->
                 <div class="form-group" id="modalSpecialGroup" style="grid-column: 1 / -1; display: none;">
@@ -1027,7 +1029,7 @@
                         </label>
                     </div>
                     <div id="modalSpecialReasonGroup" style="display: none; margin-top: 0.5rem;">
-                        <input type="text" id="modalSpecialReason" placeholder="請輸入特殊原因，例如：颱風假補班、例外授權...">
+                        <textarea id="modalSpecialReason" rows="2" placeholder="請輸入特殊原因，例如：颱風假補班、例外授權..." style="resize: vertical; font-family: inherit; width: 100%;"></textarea>
                     </div>
                 </div>
             </div>

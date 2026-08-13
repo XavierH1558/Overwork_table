@@ -115,12 +115,27 @@ def process_leave_task(task_text, seg_names, fallback_date, default_year=2026):
     protected_text = re.sub(date_list_pattern, r'\1__COMMA__\2', task_text)
     protected_text = re.sub(date_list_pattern, r'\1__COMMA__\2', protected_text)
 
-    raw_clauses = re.split(r'[,，;；（）\(\)]', protected_text)
+    # Protect parenthetical content e.g. (看醫生) -> __PAREN_0__
+    parens = []
+    def _mask_paren(m):
+        parens.append(m.group(0))
+        return f" __PAREN_{len(parens)-1}__ "
+
+    protected_text = re.sub(r'[\(\（][^\)\）]+[\)\）]', _mask_paren, protected_text)
+
+    raw_clauses = re.split(r'[,，;；]', protected_text)
     raw_clauses = [c.replace('__COMMA__', ', ').strip() for c in raw_clauses if c.strip()]
+
+    # Unmask parens in raw clauses
+    unmasked_clauses = []
+    for c in raw_clauses:
+        for p_idx, p_val in enumerate(parens):
+            c = c.replace(f"__PAREN_{p_idx}__", p_val)
+        unmasked_clauses.append(c)
 
     # Merge continuation clauses (clauses with no leave keyword, no date, and no person name) into previous clause
     merged_clauses = []
-    for c in raw_clauses:
+    for c in unmasked_clauses:
         has_kw = any(kw in c or kw.lower() in c.lower() for kw in LEAVE_META.keys())
         has_dt = len(parse_all_dates(c, default_year)) > 0
         has_person = any(re.search(r'(?<![a-zA-Z0-9_])' + re.escape(n) + r'(?![a-zA-Z0-9_])', c, re.IGNORECASE) for n in KNOWN_NAMES)
@@ -347,6 +362,7 @@ def parse_raw_text(text_block, default_year=2026, known_names=None, member_locat
     
     lines = text_block.strip().split('\n')
     current_date = f"{default_year}/07/01"
+    last_line_records = []
     
     for line_idx, raw_line in enumerate(lines, 1):
         line = raw_line.strip()
@@ -398,11 +414,15 @@ def parse_raw_text(text_block, default_year=2026, known_names=None, member_locat
         
         if not name_matches:
             if rest_of_line:
-                warning_records.append({
-                    "line": line_idx,
-                    "raw": raw_line,
-                    "reason": "未找到認識的團隊成員姓名"
-                })
+                if not date_match and last_line_records:
+                    for rec in last_line_records:
+                        rec["reason"] = (rec["reason"] + " " + rest_of_line).strip()
+                else:
+                    warning_records.append({
+                        "line": line_idx,
+                        "raw": raw_line,
+                        "reason": "未找到認識的團隊成員姓名"
+                    })
             continue
 
         # Split rest_of_line into segments based on names
@@ -419,6 +439,7 @@ def parse_raw_text(text_block, default_year=2026, known_names=None, member_locat
             line_prefix_time = time_matches[0].group(1)
 
         # Process each segment
+        current_line_records = []
         idx = 0
         while idx < len(segments):
             seg_names = []
@@ -457,6 +478,7 @@ def parse_raw_text(text_block, default_year=2026, known_names=None, member_locat
             if has_leave_kw:
                 parsed_l_recs = process_leave_task(task_text, seg_names, current_date, default_year)
                 leave_records.extend(parsed_l_recs)
+                current_line_records.extend(parsed_l_recs)
             elif raw_time_str:
                 norm_time, hours = parse_time_range(raw_time_str)
                 
@@ -490,7 +512,7 @@ def parse_raw_text(text_block, default_year=2026, known_names=None, member_locat
                             "reason": f"{person}: {rule_warn_msg}"
                         })
                     
-                    overtime_records.append({
+                    new_ot_rec = {
                         "date": current_date,
                         "name": person,
                         "time": norm_time or raw_time_str,
@@ -499,6 +521,11 @@ def parse_raw_text(text_block, default_year=2026, known_names=None, member_locat
                         "note": note,
                         "eval_hours": hours,
                         "rule_warning": rule_warn_msg if not is_rule_ok else None
-                    })
+                    }
+                    overtime_records.append(new_ot_rec)
+                    current_line_records.append(new_ot_rec)
+
+        if current_line_records:
+            last_line_records = current_line_records
 
     return overtime_records, leave_records, warning_records
