@@ -225,7 +225,7 @@ class OverworkApp(tk.Tk):
         year = int(self.import_year_var.get() or datetime.now().year)
         self.set_status("解析中...")
         try:
-            ot_list, lv_list = att_parser.parse_raw_text(raw, default_year=year)
+            ot_list, lv_list, *_ = att_parser.parse_raw_text(raw, default_year=year)
         except Exception as e:
             messagebox.showerror("解析失敗", str(e), parent=self)
             self.set_status("解析失敗")

@@ -168,9 +168,14 @@ def process_leave_task(task_text, seg_names, fallback_date, default_year=2026):
                 c_dates = line_fallback_dates if line_fallback_dates else [fallback_date]
                 
             is_wfh = 'WFH' in clause.upper() or 'ＷＦＨ' in clause or (matched_kw in ['WFH', 'ＷＦＨ'])
-            is_half = '半天' in clause or '0.5' in clause or is_wfh
+            half_day_keywords = ['半天', '0.5', '上午', '下午', '早上', '上半天', '下半天', '上半日', '下半日', '早退']
+            is_half_kw = any(k in clause for k in half_day_keywords) or bool(re.search(r'\b(AM|PM)\b', clause, re.IGNORECASE))
+            is_half = is_half_kw or is_wfh
             
-            if is_half:
+            if matched_type == "出勤確認":
+                duration = "1天"
+                comp = 0.0
+            elif is_half:
                 duration = "0.5天"
                 comp = 0.5 if (matched_type == "黑假" or is_wfh) else matched_meta["google_comp"]
             else:
@@ -181,11 +186,14 @@ def process_leave_task(task_text, seg_names, fallback_date, default_year=2026):
             # Case-insensitive removal of names
             for person in (KNOWN_NAMES + seg_names):
                 clean_reason = re.sub(r'(?<![a-zA-Z0-9_])' + re.escape(person) + r'(?![a-zA-Z0-9_])', '', clean_reason, flags=re.IGNORECASE)
-            for kw in list(LEAVE_META.keys()) + ["補卡"]:
-                clean_reason = clean_reason.replace(kw, '')
-            clean_reason = re.sub(r'(請|要請|申請|請假|一天|半天|0\.5天|\d+天|\d{1,2}/\d{1,2}|\b(?:0[1-9]|1[0-2])(?:[0-2][0-9]|3[01])\b)', '', clean_reason)
+            if matched_kw:
+                clean_reason = clean_reason.replace(matched_kw, '')
+            clean_reason = clean_reason.replace("補卡", '')
+            clean_reason = re.sub(r'(請|要請|申請|請假|上半天|下半天|一天|半天|0\.5天|\d+天|\d{1,2}/\d{1,2}|\b(?:0[1-9]|1[0-2])(?:[0-2][0-9]|3[01])\b)', '', clean_reason)
             clean_reason = re.sub(r'[,，\s]+', ' ', clean_reason).strip()
             clean_reason = re.sub(r'^[,\s，:\-–—~]+|[,\s，:\-–—~]+$', '', clean_reason).strip()
+            if clean_reason in ['上', '下']:
+                clean_reason = ''
             
             if matched_type == "出勤確認":
                 full_ctx = f"{task_text} {clause}"
