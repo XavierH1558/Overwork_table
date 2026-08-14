@@ -318,8 +318,8 @@
         #tab-leaves table th:nth-child(3), #tab-leaves table td:nth-child(3) { width: 85px; white-space: nowrap; }
         #tab-leaves table th:nth-child(4), #tab-leaves table td:nth-child(4) { width: 70px; white-space: nowrap; }
         #tab-leaves table th:nth-child(5), #tab-leaves table td:nth-child(5) { width: 120px; white-space: nowrap; }
-        #tab-leaves table th:nth-child(6), #tab-leaves table td:nth-child(6) { width: 125px; white-space: nowrap; }
-        #tab-leaves table th:nth-child(7), #tab-leaves table td:nth-child(7) { min-width: 150px; }
+        #tab-leaves table th:nth-child(6), #tab-leaves table td:nth-child(6) { min-width: 150px; }
+        #tab-leaves table th:nth-child(7), #tab-leaves table td:nth-child(7) { width: 125px; white-space: nowrap; }
         #tab-leaves table th:nth-child(8), #tab-leaves table td:nth-child(8) { width: 110px; white-space: nowrap; text-align: right; }
 
         #tab-overtime table th:nth-child(1), #tab-overtime table td:nth-child(1) { width: 105px; white-space: nowrap; }
@@ -766,8 +766,8 @@
                                 <th>假別</th>
                                 <th>時長</th>
                                 <th>Google 補休(天)</th>
-                                <th>補休扣除狀態</th>
                                 <th>事由</th>
+                                <th>補休扣除狀態</th>
                                 <th>操作</th>
                             </tr>
                         </thead>
@@ -1819,8 +1819,8 @@
                     <td><span class="badge ${badgeClass}">${r.leave_type}</span></td>
                     <td>${r.duration}</td>
                     <td>${r.google_comp_days > 0 ? `${r.google_comp_days} 天` : '-'}</td>
-                    <td>${statusControlHtml}</td>
                     <td>${r.reason || '-'}</td>
+                    <td>${statusControlHtml}</td>
                     <td>
                         <div class="action-cell">
                             <button class="action-btn" onclick="openLeaveEditModal(${r.id})"><i class="fa-solid fa-pen-to-square"></i> 編輯</button>
