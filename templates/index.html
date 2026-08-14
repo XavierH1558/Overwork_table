@@ -276,30 +276,32 @@
             overflow-x: auto;
             border-radius: 0.5rem;
             border: 1px solid var(--card-border);
+            background: rgba(15, 23, 42, 0.4);
         }
 
         table {
             width: 100%;
             border-collapse: collapse;
             text-align: left;
-            font-size: 0.9rem;
+            font-size: 0.88rem;
+            line-height: 1.35;
         }
 
         th {
             background-color: #0f172a;
             color: var(--text-muted);
             font-weight: 600;
-            padding: 0.75rem 1rem;
+            font-size: 0.82rem;
+            padding: 0.5rem 0.85rem;
             border-bottom: 1px solid var(--card-border);
-
+            white-space: nowrap;
         }
 
         td {
-            padding: 0.75rem 1rem;
+            padding: 0.42rem 0.85rem;
             border-bottom: 1px solid var(--card-border);
             color: var(--text-main);
-            white-space: pre-wrap;
-            word-break: break-word;
+            vertical-align: middle;
         }
 
         tr:last-child td {
@@ -307,16 +309,51 @@
         }
 
         tr:hover td {
-            background-color: rgba(255, 255, 255, 0.02);
+            background-color: rgba(255, 255, 255, 0.03);
         }
+
+        /* Column Specific Widths for Compact & Proportional Layout */
+        #tab-leaves table th:nth-child(1), #tab-leaves table td:nth-child(1) { width: 105px; white-space: nowrap; }
+        #tab-leaves table th:nth-child(2), #tab-leaves table td:nth-child(2) { width: 90px; white-space: nowrap; }
+        #tab-leaves table th:nth-child(3), #tab-leaves table td:nth-child(3) { width: 85px; white-space: nowrap; }
+        #tab-leaves table th:nth-child(4), #tab-leaves table td:nth-child(4) { width: 70px; white-space: nowrap; }
+        #tab-leaves table th:nth-child(5), #tab-leaves table td:nth-child(5) { width: 120px; white-space: nowrap; }
+        #tab-leaves table th:nth-child(6), #tab-leaves table td:nth-child(6) { width: 125px; white-space: nowrap; }
+        #tab-leaves table th:nth-child(7), #tab-leaves table td:nth-child(7) { min-width: 150px; }
+        #tab-leaves table th:nth-child(8), #tab-leaves table td:nth-child(8) { width: 110px; white-space: nowrap; text-align: right; }
+
+        #tab-overtime table th:nth-child(1), #tab-overtime table td:nth-child(1) { width: 105px; white-space: nowrap; }
+        #tab-overtime table th:nth-child(2), #tab-overtime table td:nth-child(2) { width: 95px; white-space: nowrap; }
+        #tab-overtime table th:nth-child(3), #tab-overtime table td:nth-child(3) { width: 90px; white-space: nowrap; }
+        #tab-overtime table th:nth-child(4), #tab-overtime table td:nth-child(4) { width: 110px; white-space: nowrap; }
+        #tab-overtime table th:nth-child(5), #tab-overtime table td:nth-child(5) { width: 125px; white-space: nowrap; }
+        #tab-overtime table th:nth-child(6), #tab-overtime table td:nth-child(6) { width: 80px; white-space: nowrap; }
+        #tab-overtime table th:nth-child(7), #tab-overtime table td:nth-child(7) { min-width: 150px; }
+        #tab-overtime table th:nth-child(8), #tab-overtime table td:nth-child(8) { width: 110px; white-space: nowrap; text-align: right; }
+
+        #parsedOtBody tr td:nth-child(1) { width: 105px; white-space: nowrap; }
+        #parsedOtBody tr td:nth-child(2) { width: 90px; white-space: nowrap; }
+        #parsedOtBody tr td:nth-child(3) { width: 110px; white-space: nowrap; }
+        #parsedOtBody tr td:nth-child(4) { width: 120px; white-space: nowrap; }
+        #parsedOtBody tr td:nth-child(5) { width: 80px; white-space: nowrap; }
+        #parsedOtBody tr td:last-child { width: 110px; white-space: nowrap; text-align: right; }
+
+        #parsedLvBody tr td:nth-child(1) { width: 105px; white-space: nowrap; }
+        #parsedLvBody tr td:nth-child(2) { width: 90px; white-space: nowrap; }
+        #parsedLvBody tr td:nth-child(3) { width: 85px; white-space: nowrap; }
+        #parsedLvBody tr td:nth-child(4) { width: 70px; white-space: nowrap; }
+        #parsedLvBody tr td:last-child { width: 110px; white-space: nowrap; text-align: right; }
+
+        #membersTableBody tr td:last-child, #locationHistoryTableBody tr td:last-child { width: 110px; white-space: nowrap; text-align: right; }
 
         /* Badges */
         .badge {
-            padding: 0.25rem 0.6rem;
+            padding: 0.2rem 0.55rem;
             border-radius: 2rem;
-            font-size: 0.78rem;
+            font-size: 0.76rem;
             font-weight: 600;
             display: inline-block;
+            white-space: nowrap;
         }
 
         .badge-ot { background: rgba(79, 70, 229, 0.2); color: #a5b4fc; border: 1px solid rgba(79, 70, 229, 0.4); }
@@ -383,24 +420,45 @@
         }
 
         /* Action Buttons in Table */
+        .action-cell {
+            display: inline-flex;
+            align-items: center;
+            justify-content: flex-end;
+            gap: 0.35rem;
+            white-space: nowrap;
+        }
+
         .action-btn {
-            background: none;
-            border: none;
+            background: rgba(255, 255, 255, 0.04);
+            border: 1px solid rgba(255, 255, 255, 0.1);
             color: var(--text-muted);
             cursor: pointer;
-            padding: 0.3rem 0.5rem;
-            border-radius: 0.25rem;
-            transition: all 0.2s ease;
+            padding: 0.22rem 0.55rem;
+            font-size: 0.8rem;
+            border-radius: 0.35rem;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.25rem;
+            transition: all 0.15s ease;
+            white-space: nowrap;
         }
 
         .action-btn:hover {
-            color: var(--text-main);
-            background-color: #334155;
+            color: #fff;
+            background-color: rgba(255, 255, 255, 0.12);
+            border-color: rgba(255, 255, 255, 0.25);
+        }
+
+        .action-btn.delete {
+            color: #f87171;
+            background: rgba(239, 68, 68, 0.08);
+            border-color: rgba(239, 68, 68, 0.2);
         }
 
         .action-btn.delete:hover {
-            color: var(--danger);
-            background-color: rgba(239, 68, 68, 0.15);
+            color: #ffffff;
+            background-color: rgba(239, 68, 68, 0.7);
+            border-color: rgba(239, 68, 68, 0.9);
         }
 
         /* Toast notification */
@@ -1681,8 +1739,10 @@
                     <td><span class="badge badge-ot">${r.hours} hr</span></td>
                     <td>${r.reason || '-'}</td>
                     <td>
-                        <button class="action-btn" onclick="openOtEditModal(${r.id})"><i class="fa-solid fa-pen-to-square"></i> 編輯</button>
-                        <button class="action-btn delete" onclick="deleteOvertime(${r.id})"><i class="fa-solid fa-trash"></i></button>
+                        <div class="action-cell">
+                            <button class="action-btn" onclick="openOtEditModal(${r.id})"><i class="fa-solid fa-pen-to-square"></i> 編輯</button>
+                            <button class="action-btn delete" onclick="deleteOvertime(${r.id})"><i class="fa-solid fa-trash"></i></button>
+                        </div>
                     </td>
                 `;
                 tbody.appendChild(tr);
@@ -1745,7 +1805,7 @@
 
                     statusControlHtml = `
                         <select onchange="changeDeductedStatus(${r.id}, this)" 
-                                style="${bgStyle} font-weight: 600; font-size: 0.82rem; padding: 4px 8px; border-radius: 6px; cursor: pointer; outline: none; transition: all 0.15s ease;"
+                                style="${bgStyle} font-weight: 600; font-size: 0.78rem; padding: 2px 6px; height: 26px; border-radius: 5px; cursor: pointer; outline: none; transition: all 0.15s ease;"
                                 title="選擇扣除狀態">
                             <option value="1" ${isDed === 1 ? 'selected' : ''} style="background:#1e293b;color:#38bdf8;">✓ 已扣補休</option>
                             <option value="0" ${isDed === 0 ? 'selected' : ''} style="background:#1e293b;color:#fcd34d;">⏳ 還沒扣</option>
@@ -1762,8 +1822,10 @@
                     <td>${statusControlHtml}</td>
                     <td>${r.reason || '-'}</td>
                     <td>
-                        <button class="action-btn" onclick="openLeaveEditModal(${r.id})"><i class="fa-solid fa-pen-to-square"></i> 編輯</button>
-                        <button class="action-btn delete" onclick="deleteLeave(${r.id})"><i class="fa-solid fa-trash"></i></button>
+                        <div class="action-cell">
+                            <button class="action-btn" onclick="openLeaveEditModal(${r.id})"><i class="fa-solid fa-pen-to-square"></i> 編輯</button>
+                            <button class="action-btn delete" onclick="deleteLeave(${r.id})"><i class="fa-solid fa-trash"></i></button>
+                        </div>
                     </td>
                 `;
                 tbody.appendChild(tr);
@@ -1983,8 +2045,10 @@
                     <td>${r.hours} hr</td>
                     <td>${r.reason}</td>
                     <td>
-                        <button class="action-btn" onclick="openEditModal('ot', ${idx})"><i class="fa-solid fa-pen-to-square"></i> 編輯</button>
-                        <button class="action-btn delete" onclick="deleteParsedItem('ot', ${idx})"><i class="fa-solid fa-trash"></i></button>
+                        <div class="action-cell">
+                            <button class="action-btn" onclick="openEditModal('ot', ${idx})"><i class="fa-solid fa-pen-to-square"></i> 編輯</button>
+                            <button class="action-btn delete" onclick="deleteParsedItem('ot', ${idx})"><i class="fa-solid fa-trash"></i></button>
+                        </div>
                     </td>
                 `;
                 otBody.appendChild(tr);
@@ -2006,8 +2070,10 @@
                     <td>${r.duration}</td>
                     <td>${r.reason}</td>
                     <td>
-                        <button class="action-btn" onclick="openEditModal('leave', ${idx})"><i class="fa-solid fa-pen-to-square"></i> 編輯</button>
-                        <button class="action-btn delete" onclick="deleteParsedItem('leave', ${idx})"><i class="fa-solid fa-trash"></i></button>
+                        <div class="action-cell">
+                            <button class="action-btn" onclick="openEditModal('leave', ${idx})"><i class="fa-solid fa-pen-to-square"></i> 編輯</button>
+                            <button class="action-btn delete" onclick="deleteParsedItem('leave', ${idx})"><i class="fa-solid fa-trash"></i></button>
+                        </div>
                     </td>
                 `;
                 lvBody.appendChild(tr);
@@ -2619,7 +2685,9 @@
                     <td>${used} 天</td>
                     <td>${classBadge}</td>
                     <td>
-                        <button class="action-btn delete" onclick="deleteMember(${m.id})"><i class="fa-solid fa-trash"></i> 刪除</button>
+                        <div class="action-cell">
+                            <button class="action-btn delete" onclick="deleteMember(${m.id})"><i class="fa-solid fa-trash"></i> 刪除</button>
+                        </div>
                     </td>
                 `;
                 tbody.appendChild(tr);
@@ -2656,8 +2724,10 @@
                     <td><span class="badge" style="background:rgba(148,163,184,0.15);color:#cbd5e1;border:1px solid rgba(148,163,184,0.3);">${h.location}</span></td>
                     <td>${classBadge}</td>
                     <td>
-                        <button class="action-btn" onclick="openLocationHistEditModal(${h.id})"><i class="fa-solid fa-pen-to-square"></i> 編輯</button>
-                        <button class="action-btn delete" onclick="deleteLocationHistory(${h.id})"><i class="fa-solid fa-trash"></i> 刪除</button>
+                        <div class="action-cell">
+                            <button class="action-btn" onclick="openLocationHistEditModal(${h.id})"><i class="fa-solid fa-pen-to-square"></i> 編輯</button>
+                            <button class="action-btn delete" onclick="deleteLocationHistory(${h.id})"><i class="fa-solid fa-trash"></i> 刪除</button>
+                        </div>
                     </td>
                 `;
                 tbody.appendChild(tr);
