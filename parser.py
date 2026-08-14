@@ -150,17 +150,24 @@ def process_leave_task(task_text, seg_names, fallback_date, default_year=2026):
     line_fallback_dates = parse_all_dates(task_text, default_year)
 
     for clause in merged_clauses:
+        # Find all matching keywords with their start positions in the clause
+        matches = []
+        clause_lower = clause.lower()
+        for kw, meta in LEAVE_META.items():
+            kw_lower = kw.lower()
+            pos = clause_lower.find(kw_lower)
+            if pos != -1:
+                matches.append((pos, -len(kw), kw, meta))
+                
         matched_kw = None
         matched_type = None
         matched_meta = None
-        for kw, meta in LEAVE_META.items():
-            if kw in clause or kw.lower() in clause.lower():
-                matched_kw = kw
-                matched_type = meta["type"]
-                if matched_type == "WFH":
-                    matched_type = "黑假"
-                matched_meta = meta
-                break
+        if matches:
+            matches.sort()  # Sort by position ascending (earliest first), then length descending
+            _, _, matched_kw, matched_meta = matches[0]
+            matched_type = matched_meta["type"]
+            if matched_type == "WFH":
+                matched_type = "黑假"
                 
         if matched_type:
             c_dates = parse_all_dates(clause, default_year)
@@ -189,7 +196,7 @@ def process_leave_task(task_text, seg_names, fallback_date, default_year=2026):
             if matched_kw:
                 clean_reason = clean_reason.replace(matched_kw, '')
             clean_reason = clean_reason.replace("補卡", '')
-            clean_reason = re.sub(r'(請|要請|申請|請假|上半天|下半天|一天|半天|0\.5天|\d+天|\d{1,2}/\d{1,2}|\b(?:0[1-9]|1[0-2])(?:[0-2][0-9]|3[01])\b)', '', clean_reason)
+            clean_reason = re.sub(r'((?<!補)申請|(?<![補申])(要請|請假|請)|上半天|下半天|一天|半天|0\.5天|\d+天|\d{1,2}/\d{1,2}|\b(?:0[1-9]|1[0-2])(?:[0-2][0-9]|3[01])\b)', '', clean_reason)
             clean_reason = re.sub(r'[,，\s]+', ' ', clean_reason).strip()
             clean_reason = re.sub(r'^[,\s，:\-–—~]+|[,\s，:\-–—~]+$', '', clean_reason).strip()
             if clean_reason in ['上', '下']:
