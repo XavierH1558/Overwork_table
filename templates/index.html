@@ -464,25 +464,32 @@
         /* Toast notification */
         #toast {
             position: fixed;
-            bottom: 2rem;
+            top: 2rem;
             right: 2rem;
-            background: #1e293b;
+            background: rgba(30, 41, 59, 0.95);
             border: 1px solid var(--card-border);
             border-left: 4px solid var(--primary);
+            backdrop-filter: blur(8px);
             color: white;
-            padding: 0.75rem 1.25rem;
-            border-radius: 0.5rem;
-            box-shadow: 0 10px 15px -3px rgba(0,0,0,0.5);
+            padding: 0.85rem 1.4rem;
+            border-radius: 0.6rem;
+            box-shadow: 0 20px 25px -5px rgba(0,0,0,0.5), 0 8px 10px -6px rgba(0,0,0,0.5);
             display: flex;
             align-items: center;
-            gap: 0.75rem;
-            transform: translateY(150%);
-            transition: transform 0.3s ease;
-            z-index: 1000;
+            gap: 0.85rem;
+            transform: translateY(-50px);
+            opacity: 0;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            z-index: 9999;
+            pointer-events: none;
+            font-size: 0.92rem;
+            font-weight: 500;
         }
 
         #toast.show {
             transform: translateY(0);
+            opacity: 1;
+            pointer-events: auto;
         }
 
         /* Modal Popup */
@@ -1245,7 +1252,7 @@
             </div>
             <div style="display: flex; justify-content: flex-end; gap: 0.75rem; margin-top: 0.5rem;">
                 <button class="btn btn-secondary" onclick="closeEditModal()">取消</button>
-                <button class="btn btn-primary" onclick="saveEditModal()">儲存變更</button>
+                <button class="btn btn-primary" id="modalSaveBtn" onclick="saveEditModal()">儲存變更</button>
             </div>
         </div>
     </div>
@@ -1759,12 +1766,29 @@
             }
         }
 
-        // Show Toast
-        function showToast(msg) {
+        // Show Toast Notification (Prominent floating feedback)
+        let toastTimeout = null;
+        function showToast(msg, type = 'success') {
             const toast = document.getElementById('toast');
-            document.getElementById('toastMsg').textContent = msg;
+            if (!toast) return;
+            const icon = toast.querySelector('i');
+            const msgEl = document.getElementById('toastMsg');
+            if (msgEl) msgEl.textContent = msg;
+            
+            if (type === 'error') {
+                toast.style.borderLeftColor = 'var(--danger)';
+                if (icon) { icon.className = 'fa-solid fa-circle-xmark'; icon.style.color = 'var(--danger)'; }
+            } else if (type === 'warning') {
+                toast.style.borderLeftColor = 'var(--warning)';
+                if (icon) { icon.className = 'fa-solid fa-triangle-exclamation'; icon.style.color = 'var(--warning)'; }
+            } else {
+                toast.style.borderLeftColor = 'var(--success)';
+                if (icon) { icon.className = 'fa-solid fa-circle-check'; icon.style.color = 'var(--success)'; }
+            }
+
             toast.classList.add('show');
-            setTimeout(() => toast.classList.remove('show'), 3000);
+            if (toastTimeout) clearTimeout(toastTimeout);
+            toastTimeout = setTimeout(() => toast.classList.remove('show'), 3500);
         }
 
         // Load All Data in parallel with smooth fade transition & loading overlay
@@ -2731,7 +2755,7 @@
             lvRecords.forEach((r, idx) => {
                 const tr = document.createElement('tr');
                 const badgeClass = getLeaveBadgeClass(r.leave_type);
-                const weekendCheck = checkTaiwanLeaveWeekend(r.name, r.date);
+                const weekendCheck = checkTaiwanLeaveWeekend(r.name, r.date, r.leave_type);
                 const warnBadge = weekendCheck.invalid ? `<span class="badge" style="background:rgba(239,68,68,0.2);color:#fca5a5;border:1px solid rgba(239,68,68,0.4);margin-left:0.4rem;" title="${weekendCheck.msg}"><i class="fa-solid fa-triangle-exclamation"></i> 台灣週末無上班</span>` : '';
                 tr.innerHTML = `
                     <td>${r.date} ${getChineseWeekday(r.date)} ${warnBadge}</td>
@@ -2944,7 +2968,23 @@
                 await refreshMemberLocationMap();
                 const today = new Date();
                 const ym = document.getElementById('monthSelect').value || `${today.getFullYear()}/${String(today.getMonth() + 1).padStart(2, '0')}`;
-                const defaultDate = `${ym}/01`;
+                
+                const todayYm = `${today.getFullYear()}/${String(today.getMonth() + 1).padStart(2, '0')}`;
+                let defaultDate = '';
+                if (ym === todayYm) {
+                    defaultDate = `${ym}/${String(today.getDate()).padStart(2, '0')}`;
+                } else {
+                    const parts = ym.split('/');
+                    const y = parseInt(parts[0], 10);
+                    const m = parseInt(parts[1], 10);
+                    let d = 1;
+                    while (d <= 28) {
+                        const checkD = new Date(y, m - 1, d);
+                        if (checkD.getDay() !== 0 && checkD.getDay() !== 6) break;
+                        d++;
+                    }
+                    defaultDate = `${ym}/${String(d).padStart(2, '0')}`;
+                }
 
                 editingRecordState = { type: 'add_leave', index: null };
                 document.getElementById('modalTitleText').innerHTML = `<i class="fa-solid fa-plus" style="color: var(--primary);"></i> 新增請假紀錄`;
@@ -3046,7 +3086,9 @@
         }
 
         // Save Edit Modal
+        let isSavingModal = false;
         async function saveEditModal() {
+            if (isSavingModal) return;
             const { type, index, id } = editingRecordState;
             if (!type) return;
 
@@ -3067,123 +3109,139 @@
                 }
             }
 
-            const selectedDeducted = document.querySelector('input[name="modalCompDeducted"]:checked');
-            const is_comp_deducted = selectedDeducted ? parseInt(selectedDeducted.value) : 1;
+            const saveBtn = document.getElementById('modalSaveBtn');
+            const originalBtnHtml = saveBtn ? saveBtn.innerHTML : '儲存變更';
+            if (saveBtn) {
+                saveBtn.disabled = true;
+                saveBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> 儲存中...';
+            }
+            isSavingModal = true;
 
-            if (type === 'edit_leave_db') {
-                // Editing a saved DB leave record
-                const leave_type = document.getElementById('modalLeaveType').value;
-                const duration = document.getElementById('modalDuration').value;
-                const google_comp_days = (leave_type === '黑假' || leave_type === 'WFH') ? (duration === '0.5天' ? 0.5 : 1.0) : 0.0;
+            try {
+                const selectedDeducted = document.querySelector('input[name="modalCompDeducted"]:checked');
+                const is_comp_deducted = selectedDeducted ? parseInt(selectedDeducted.value) : 1;
 
-                const res = await fetch(`/api/leaves/${id}`, {
-                    method: 'PUT',
-                    headers: getAuthHeaders(),
-                    body: JSON.stringify({ date, name, leave_type, duration, google_comp_days, reason, is_comp_deducted })
-                });
-                if (res.ok) {
-                    showToast('已更新請假紀錄');
-                    closeEditModal();
-                    await loadLeaves();
-                    await loadStats();
-                    await refreshMemberLocationMap();
-                } else {
-                    const err = await res.json();
-                    alert(err.message || '更新失敗');
+                if (type === 'edit_leave_db') {
+                    // Editing a saved DB leave record
+                    const leave_type = document.getElementById('modalLeaveType').value;
+                    const duration = document.getElementById('modalDuration').value;
+                    const google_comp_days = (leave_type === '黑假' || leave_type === 'WFH') ? (duration === '0.5天' ? 0.5 : 1.0) : 0.0;
+
+                    const res = await fetch(`/api/leaves/${id}`, {
+                        method: 'PUT',
+                        headers: getAuthHeaders(),
+                        body: JSON.stringify({ date, name, leave_type, duration, google_comp_days, reason, is_comp_deducted })
+                    });
+                    if (res.ok) {
+                        closeEditModal();
+                        showToast('✅ 已更新請假紀錄！');
+                        await loadLeaves();
+                        await loadStats();
+                        await refreshMemberLocationMap();
+                    } else {
+                        const err = await res.json();
+                        alert(err.message || '更新失敗');
+                    }
+                    return;
                 }
-                return;
-            }
 
-            if (type === 'edit_ot_db') {
-                // Editing a saved DB overtime record
-                const time = document.getElementById('modalTime').value.trim();
-                const hours = parseFloat(document.getElementById('modalHours').value || 0);
-                const isSpecial = document.getElementById('modalIsSpecial').checked;
-                const specialReason = document.getElementById('modalSpecialReason').value.trim();
+                if (type === 'edit_ot_db') {
+                    // Editing a saved DB overtime record
+                    const time = document.getElementById('modalTime').value.trim();
+                    const hours = parseFloat(document.getElementById('modalHours').value || 0);
+                    const isSpecial = document.getElementById('modalIsSpecial').checked;
+                    const specialReason = document.getElementById('modalSpecialReason').value.trim();
 
-                const res = await fetch(`/api/overtime/${id}`, {
-                    method: 'PUT',
-                    headers: getAuthHeaders(),
-                    body: JSON.stringify({ date, name, time, hours, reason, eval_hours: hours,
-                                          is_special: isSpecial, special_reason: specialReason })
-                });
-                if (res.ok) {
-                    showToast(isSpecial ? `已標記為特殊狀況並儲存` : '已更新加班紀錄');
-                    closeEditModal();
-                    loadOvertime();
-                    loadStats();
-                } else {
-                    const err = await res.json();
-                    alert(err.message || '更新失敗');
+                    const res = await fetch(`/api/overtime/${id}`, {
+                        method: 'PUT',
+                        headers: getAuthHeaders(),
+                        body: JSON.stringify({ date, name, time, hours, reason, eval_hours: hours,
+                                              is_special: isSpecial, special_reason: specialReason })
+                    });
+                    if (res.ok) {
+                        closeEditModal();
+                        showToast(isSpecial ? `✅ 已標記為特殊狀況並儲存` : '✅ 已更新加班紀錄！');
+                        loadOvertime();
+                        loadStats();
+                    } else {
+                        const err = await res.json();
+                        alert(err.message || '更新失敗');
+                    }
+                    return;
                 }
-                return;
-            }
 
-            if (type === 'add_ot') {
-                const time = document.getElementById('modalTime').value.trim();
-                const hours = parseFloat(document.getElementById('modalHours').value || 0);
+                if (type === 'add_ot') {
+                    const time = document.getElementById('modalTime').value.trim();
+                    const hours = parseFloat(document.getElementById('modalHours').value || 0);
 
-                const res = await fetch('/api/overtime', {
-                    method: 'POST',
-                    headers: getAuthHeaders(),
-                    body: JSON.stringify({ date, name, time, hours, reason })
-                });
-                if (res.ok) {
-                    showToast('新增加班紀錄成功！');
-                    closeEditModal();
-                    loadOvertime();
-                    loadStats();
-                } else {
-                    const err = await res.json();
-                    alert(err.message || '新增加班紀錄失敗');
+                    const res = await fetch('/api/overtime', {
+                        method: 'POST',
+                        headers: getAuthHeaders(),
+                        body: JSON.stringify({ date, name, time, hours, reason })
+                    });
+                    if (res.ok) {
+                        closeEditModal();
+                        showToast('🎉 新增加班紀錄成功！');
+                        loadOvertime();
+                        loadStats();
+                    } else {
+                        const err = await res.json();
+                        alert(err.message || '新增加班紀錄失敗');
+                    }
+                    return;
                 }
-                return;
-            }
 
-            if (type === 'add_leave') {
-                const leave_type = document.getElementById('modalLeaveType').value;
-                const duration = document.getElementById('modalDuration').value;
-                const google_comp_days = (leave_type === '黑假' || leave_type === 'WFH') ? (duration === '0.5天' ? 0.5 : 1.0) : 0.0;
+                if (type === 'add_leave') {
+                    const leave_type = document.getElementById('modalLeaveType').value;
+                    const duration = document.getElementById('modalDuration').value;
+                    const google_comp_days = (leave_type === '黑假' || leave_type === 'WFH') ? (duration === '0.5天' ? 0.5 : 1.0) : 0.0;
 
-                const res = await fetch('/api/leaves', {
-                    method: 'POST',
-                    headers: getAuthHeaders(),
-                    body: JSON.stringify({ date, name, leave_type, duration, google_comp_days, reason, is_comp_deducted })
-                });
-                if (res.ok) {
-                    showToast('新增請假紀錄成功！');
-                    closeEditModal();
-                    await loadLeaves();
-                    await loadStats();
-                    await refreshMemberLocationMap();
-                } else {
-                    const err = await res.json();
-                    alert(err.message || '新增請假紀錄失敗');
+                    const res = await fetch('/api/leaves', {
+                        method: 'POST',
+                        headers: getAuthHeaders(),
+                        body: JSON.stringify({ date, name, leave_type, duration, google_comp_days, reason, is_comp_deducted })
+                    });
+                    if (res.ok) {
+                        closeEditModal();
+                        showToast('🎉 新增請假紀錄成功！');
+                        await loadLeaves();
+                        await loadStats();
+                        await refreshMemberLocationMap();
+                    } else {
+                        const err = await res.json();
+                        alert(err.message || '新增請假紀錄失敗');
+                    }
+                    return;
                 }
-                return;
+
+                // Otherwise updating preview item
+                const item = (type === 'ot') ? currentParsedData.overtime_records[index] : currentParsedData.leave_records[index];
+                item.date = date;
+                item.name = name;
+                item.reason = reason;
+
+                if (type === 'ot') {
+                    item.time = document.getElementById('modalTime').value;
+                    item.hours = parseFloat(document.getElementById('modalHours').value || 0);
+                    item.eval_hours = item.hours;
+                    item.is_special = document.getElementById('modalIsSpecial').checked ? 1 : 0;
+                    item.special_reason = document.getElementById('modalSpecialReason').value.trim();
+                } else {
+                    item.leave_type = document.getElementById('modalLeaveType').value;
+                    item.duration = document.getElementById('modalDuration').value;
+                    item.google_comp_days = (item.leave_type === '黑假' || item.leave_type === 'WFH') ? (item.duration === '0.5天' ? 0.5 : 1.0) : 0.0;
+                }
+
+                closeEditModal();
+                showToast('✅ 已更新預覽項目');
+                await renderParsedPreview();
+            } finally {
+                isSavingModal = false;
+                if (saveBtn) {
+                    saveBtn.disabled = false;
+                    saveBtn.innerHTML = originalBtnHtml;
+                }
             }
-
-            // Otherwise updating preview item
-            const item = (type === 'ot') ? currentParsedData.overtime_records[index] : currentParsedData.leave_records[index];
-            item.date = date;
-            item.name = name;
-            item.reason = reason;
-
-            if (type === 'ot') {
-                item.time = document.getElementById('modalTime').value;
-                item.hours = parseFloat(document.getElementById('modalHours').value || 0);
-                item.eval_hours = item.hours;
-                item.is_special = document.getElementById('modalIsSpecial').checked ? 1 : 0;
-                item.special_reason = document.getElementById('modalSpecialReason').value.trim();
-            } else {
-                item.leave_type = document.getElementById('modalLeaveType').value;
-                item.duration = document.getElementById('modalDuration').value;
-                item.google_comp_days = (item.leave_type === '黑假' || item.leave_type === 'WFH') ? (item.duration === '0.5天' ? 0.5 : 1.0) : 0.0;
-            }
-
-            showToast('已更新預覽項目');
-            closeEditModal();
-            await renderParsedPreview();
         }
 
         // Confirm Import

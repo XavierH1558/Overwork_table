@@ -170,7 +170,7 @@ def confirm_import():
     
     # Validate Taiwan weekend leave records
     for lv in lv_list:
-        is_invalid, err_msg = database.check_taiwan_leave_weekend(lv.get('name'), lv.get('date'))
+        is_invalid, err_msg = database.check_taiwan_leave_weekend(lv.get('name'), lv.get('date'), lv.get('leave_type'))
         if is_invalid:
             return jsonify({
                 "status": "error",
@@ -329,7 +329,7 @@ def add_leave():
     reason = data.get('reason', '')
     is_comp_deducted = int(data.get('is_comp_deducted', 1))
     
-    is_invalid, err_msg = database.check_taiwan_leave_weekend(name, date)
+    is_invalid, err_msg = database.check_taiwan_leave_weekend(name, date, leave_type)
     if is_invalid:
         return jsonify({"status": "error", "message": err_msg}), 400
     
@@ -349,7 +349,7 @@ def update_leave(rec_id):
     reason = data.get('reason', '')
     is_comp_deducted = int(data.get('is_comp_deducted', 1))
     
-    is_invalid, err_msg = database.check_taiwan_leave_weekend(name, date)
+    is_invalid, err_msg = database.check_taiwan_leave_weekend(name, date, leave_type)
     if is_invalid:
         return jsonify({"status": "error", "message": err_msg}), 400
     

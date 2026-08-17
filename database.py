@@ -366,9 +366,10 @@ def is_taiwan_location(location):
     return '台灣' in loc or 'taiwan' in loc or '遠雄' in loc or '辦公室' in loc or loc == ''
 
 
-def check_taiwan_leave_weekend(name, date_str):
+def check_taiwan_leave_weekend(name, date_str, leave_type=None):
     """
-    Checks if a leave record for a person on a specific date is in Taiwan and on a weekend (Saturday / Sunday).
+    Checks if a leave/attendance record for a person on a specific date is in Taiwan and on a weekend (Saturday / Sunday).
+    In Taiwan, Saturday and Sunday have no work, so no leave or attendance confirmation records can be added on weekends.
     Returns (is_invalid, error_message).
     """
     if not date_str:
@@ -468,6 +469,21 @@ def add_leave_record(date, name, leave_type, duration, google_comp_days, reason,
     is_ded = 1 if int(bool(is_comp_deducted)) else 0
     with get_connection() as conn:
         cursor = conn.cursor()
+        # Prevent rapid double-submit duplicate records
+        cursor.execute('''
+            SELECT id FROM leave_records 
+            WHERE date=? AND LOWER(name)=LOWER(?) AND leave_type=? AND reason=?
+        ''', (date, name, leave_type, reason))
+        existing = cursor.fetchone()
+        if existing:
+            cursor.execute('''
+                UPDATE leave_records
+                SET duration=?, google_comp_days=?, is_comp_deducted=?, year=?, month=?
+                WHERE id=?
+            ''', (duration, google_comp_days, is_ded, y, m, existing['id']))
+            conn.commit()
+            return existing['id']
+
         cursor.execute('''
             INSERT INTO leave_records (date, name, leave_type, duration, google_comp_days, reason, year, month, is_comp_deducted)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
