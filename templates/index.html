@@ -897,7 +897,13 @@
                         <select id="dashWeekSelect" onchange="onDashWeekChange(this.value)" style="width: 180px;">
                             <option value="all">全部週次 (全月統計)</option>
                         </select>
+                        <button class="btn btn-secondary" id="btnDashActiveOnly" onclick="toggleDashActiveOnly()" style="border-color: rgba(99,102,241,0.4); color: #a5b4fc;" title="切換是否僅顯示該週有加班或請假活動的成員">
+                            <i class="fa-solid fa-filter"></i> 僅顯示有紀錄成員：關
+                        </button>
                     </div>
+                </div>
+                <div id="dashActiveScopeBanner" style="padding: 0.55rem 1.25rem; background: rgba(99,102,241,0.08); border-bottom: 1px solid rgba(255,255,255,0.06); font-size: 0.85rem; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 0.5rem;">
+                    <!-- Populated dynamically via JS -->
                 </div>
                 <div class="table-responsive">
                     <table>
@@ -905,12 +911,12 @@
                             <tr>
                                 <th>成員姓名</th>
                                 <th>駐點地點與加班分拆明細</th>
-                                <th>加班總數</th>
+                                <th id="thDashOtCount">加班總數</th>
                                 <th>平日加班 (hr)</th>
                                 <th>假日 / 特殊 (hr)</th>
                                 <th>本月預估新增補休</th>
                                 <th>特殊狀況標記</th>
-                                <th>請假總數</th>
+                                <th id="thDashLeaveCount">請假總數</th>
                                 <th>請假假別組成明細</th>
                                 <th>Google 補休 (天)</th>
                             </tr>
@@ -1728,6 +1734,7 @@
         }
 
         let currentSelectedDashWeek = 'all';
+        let isDashActiveOnly = false;
         let isOtGroupedByWeek = true;
         let isLeaveGroupedByWeek = true;
         let currentMonthWeeks = [];
@@ -1788,6 +1795,12 @@
 
         function onDashWeekChange(weekVal) {
             currentSelectedDashWeek = weekVal;
+            const container = document.getElementById('dashWeekPills');
+            if (container) {
+                container.querySelectorAll('.week-pill').forEach(pill => {
+                    pill.classList.toggle('active', pill.getAttribute('data-week') === String(weekVal));
+                });
+            }
             loadStats();
         }
 
@@ -1795,6 +1808,26 @@
             currentSelectedDashWeek = String(weekVal);
             const selectEl = document.getElementById('dashWeekSelect');
             if (selectEl) selectEl.value = currentSelectedDashWeek;
+            const container = document.getElementById('dashWeekPills');
+            if (container) {
+                container.querySelectorAll('.week-pill').forEach(pill => {
+                    pill.classList.toggle('active', pill.getAttribute('data-week') === String(weekVal));
+                });
+            }
+            loadStats();
+        }
+
+        function toggleDashActiveOnly() {
+            isDashActiveOnly = !isDashActiveOnly;
+            const btn = document.getElementById('btnDashActiveOnly');
+            if (btn) {
+                btn.innerHTML = isDashActiveOnly 
+                    ? '<i class="fa-solid fa-filter"></i> 僅顯示有紀錄成員：開' 
+                    : '<i class="fa-solid fa-filter"></i> 僅顯示有紀錄成員：關';
+                btn.style.borderColor = isDashActiveOnly ? 'var(--primary)' : 'rgba(99,102,241,0.4)';
+                btn.style.color = isDashActiveOnly ? '#ffffff' : '#a5b4fc';
+                btn.style.background = isDashActiveOnly ? 'rgba(99,102,241,0.25)' : 'transparent';
+            }
             loadStats();
         }
 
@@ -2186,6 +2219,11 @@
                 }
             }
 
+            const thOt = document.getElementById('thDashOtCount');
+            if (thOt) thOt.textContent = `加班總數 (${weekObj ? '本週' : '全月'})`;
+            const thLv = document.getElementById('thDashLeaveCount');
+            if (thLv) thLv.textContent = `請假總數 (${weekObj ? '本週' : '全月'})`;
+
             const otTitle = document.getElementById('statOtTitle');
             if (otTitle) otTitle.innerHTML = `<span style="color:#818cf8;font-size:0.9rem;font-weight:600;">${weekObj ? '第' + weekObj.weekIndex + '週' : monthZh}</span> 加班總時數`;
 
@@ -2209,8 +2247,44 @@
             let teamEstDays = data.team_est_comp_days || 0;
             let totalLeave = 0;
 
+            const activeMembersCount = statsList.filter(s => (s.ot_count || 0) > 0 || (s.leave_count || 0) > 0).length;
+
+            // Update Active Scope Banner
+            const bannerEl = document.getElementById('dashActiveScopeBanner');
+            if (bannerEl) {
+                if (!weekObj) {
+                    bannerEl.innerHTML = `
+                        <div style="display:flex; align-items:center; gap:0.5rem; flex-wrap:wrap;">
+                            <span class="badge" style="background:rgba(99,102,241,0.25); color:#c7d2fe; font-size:0.82rem;"><i class="fa-solid fa-calendar"></i> 全月累計總覽</span>
+                            <span style="color:var(--text-muted);">顯示 ${monthZh} 全月份累計，共 <strong>${activeMembersCount}</strong> 位成員有出勤/請假紀錄</span>
+                        </div>
+                        <div style="color:var(--text-muted); font-size:0.82rem;">
+                            <span style="color:#818cf8; margin-right:10px;"><i class="fa-solid fa-user-clock"></i> 加班共 <strong>${totalOt}h</strong></span>
+                            <span style="color:#38bdf8;"><i class="fa-solid fa-plane-departure"></i> 請假共 <strong>${data.team_total_leaves !== undefined ? data.team_total_leaves : totalLeave}筆</strong></span>
+                        </div>
+                    `;
+                } else {
+                    const emptyNotice = (activeMembersCount === 0) 
+                        ? `<span class="badge" style="background:rgba(245,158,11,0.15); color:#fcd34d; font-size:0.8rem; margin-left:0.4rem;"><i class="fa-solid fa-circle-info"></i> 本週全員皆無加班或請假紀錄 (均為0)</span>` 
+                        : '';
+                    bannerEl.innerHTML = `
+                        <div style="display:flex; align-items:center; gap:0.5rem; flex-wrap:wrap;">
+                            <span class="badge" style="background:rgba(56,189,248,0.25); color:#7dd3fc; font-size:0.82rem;"><i class="fa-solid fa-calendar-days"></i> 第 ${weekObj.weekIndex} 週 (${weekObj.rangeText})</span>
+                            <span style="color:var(--text-muted);">本週有活動成員：<strong style="color:${activeMembersCount > 0 ? '#4ade80' : 'var(--text-muted)'};">${activeMembersCount}</strong> 人</span>
+                            ${emptyNotice}
+                        </div>
+                        <div style="font-size:0.82rem;">
+                            <span style="color:#818cf8; margin-right:10px;"><i class="fa-solid fa-user-clock"></i> 本週加班: <strong>${totalOt}h</strong></span>
+                            <span style="color:#38bdf8;"><i class="fa-solid fa-plane-departure"></i> 本週請假: <strong>${totalLeave}筆</strong></span>
+                        </div>
+                    `;
+                }
+            }
+
             const tbody = document.getElementById('summaryTableBody');
             tbody.innerHTML = '';
+
+            let renderedCount = 0;
 
             statsList.forEach(item => {
                 const otCount = item.ot_count !== undefined ? item.ot_count : 0;
@@ -2225,6 +2299,12 @@
                 const leaveCount = item.leave_count !== undefined ? item.leave_count : ((item.sick_days || 0) + (item.personal_days || 0) + (item.black_days || 0) + (item.wfh_days || 0));
                 
                 totalLeave += leaveCount;
+
+                const hasActivity = (otCount > 0 || leaveCount > 0);
+                if (isDashActiveOnly && !hasActivity) {
+                    return; // Skip inactive members when filter is active
+                }
+                renderedCount++;
 
                 let spDisplay = '-';
                 if (spCount > 0) {
@@ -2298,20 +2378,35 @@
                     : `<div><strong>${googleComp} 天</strong>${pendingInfo}</div>`;
 
                 const tr = document.createElement('tr');
+                if (hasActivity) {
+                    tr.style.background = 'rgba(99, 102, 241, 0.08)';
+                    tr.style.borderLeft = '3px solid #818cf8';
+                } else {
+                    tr.style.opacity = '0.7';
+                }
+
+                const activityBadge = hasActivity
+                    ? `<span class="badge" style="background:rgba(34,197,94,0.18);color:#4ade80;font-size:0.7rem;margin-left:4px;" title="該成員在此週有加班或請假紀錄"><i class="fa-solid fa-check"></i> 有活動</span>`
+                    : '';
+
                 tr.innerHTML = `
-                    <td><strong>${item.name}</strong></td>
+                    <td><strong>${item.name}</strong> ${activityBadge}</td>
                     <td>${locDetailHtml}</td>
-                    <td>${otCount} 筆</td>
+                    <td>${otCount > 0 ? `<strong style="color:#818cf8;">${otCount} 筆</strong>` : `<span style="color:var(--text-muted);">0 筆</span>`}</td>
                     <td><span class="badge badge-ot">${weekdayOt} hr</span></td>
                     <td>${weekendBadge}</td>
                     <td>${estBadge}</td>
                     <td>${spDisplay}</td>
-                    <td>${leaveCount} 筆</td>
+                    <td>${leaveCount > 0 ? `<strong style="color:#38bdf8;">${leaveCount} 筆</strong>` : `<span style="color:var(--text-muted);">0 筆</span>`}</td>
                     <td>${leaveDetailHtml}</td>
                     <td>${compDisplay}</td>
                 `;
                 tbody.appendChild(tr);
             });
+
+            if (renderedCount === 0) {
+                tbody.innerHTML = `<tr><td colspan="10" style="text-align:center; padding: 2.5rem 1rem; color: var(--text-muted);"><i class="fa-solid fa-calendar-check" style="font-size: 1.8rem; color: #818cf8; display:block; margin-bottom: 0.6rem;"></i>${weekObj ? `${monthZh} ${weekObj.label}` : monthZh} 全員皆無加班或請假活動</td></tr>`;
+            }
 
             document.getElementById('stat-total-ot').innerHTML = `${totalOt.toFixed(1)} <span style="font-size:0.85rem;font-weight:normal;color:var(--text-muted);">(平日${teamWeekday.toFixed(1)}h / 假日${teamWeekend.toFixed(1)}h)</span>`;
             document.getElementById('stat-total-leave').textContent = `${totalLeave} 筆`;
