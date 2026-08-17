@@ -1992,8 +1992,8 @@
             await loadData();
         }
 
-        // Tab Navigation with smooth transition
-        async function switchTab(tabId) {
+        // Tab Navigation with smooth transition & localStorage memory persistence
+        function setActiveTabUI(tabId) {
             document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
             document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
 
@@ -2003,8 +2003,19 @@
             const targetContent = document.getElementById(`tab-${tabId}`);
             if (targetContent) {
                 targetContent.classList.add('active');
-                await loadData();
             }
+        }
+
+        async function switchTab(tabId) {
+            localStorage.setItem('activeTab', tabId);
+            setActiveTabUI(tabId);
+            await loadData();
+        }
+
+        function restoreActiveTab() {
+            const savedTab = localStorage.getItem('activeTab') || 'dashboard';
+            setActiveTabUI(savedTab);
+            return savedTab;
         }
 
         // Show Toast Notification (Prominent floating feedback)
@@ -3975,10 +3986,9 @@
 
         // Startup
         document.addEventListener('DOMContentLoaded', async () => {
+            restoreActiveTab();
             initMonthSelector();
             updateAdminAuthUI();
-            await refreshMemberLocationMap();  // 預先載入成員駐點資料，讓匯入預覽規則驗證正確
-            loadStats();
         });
     </script>
 </body>
