@@ -2195,8 +2195,11 @@
             }
         }
 
+        let globalStatsRequestId = 0;
+
         // Load Stats & Summary Table
         async function loadStats() {
+            const currentStatsReqId = ++globalStatsRequestId;
             const month = document.getElementById('monthSelect').value || '2026/07';
             const parts = month.split('/');
             const yearNum = parseInt(parts[0], 10);
@@ -2246,6 +2249,9 @@
             const res = await fetch(queryUrl);
             const data = await res.json();
 
+            // Discard stale in-flight responses
+            if (currentStatsReqId !== globalStatsRequestId) return;
+
             // Render Weekly Navigation Pills for Dashboard, Overtime, and Leaves
             renderAllWeeklyPills(data, monthZh);
 
@@ -2255,7 +2261,11 @@
             let teamWeekend = data.team_weekend_hours || 0;
             let teamEstHours = data.team_est_comp_hours || 0;
             let teamEstDays = data.team_est_comp_days || 0;
-            let totalLeave = 0;
+            
+            // Calculate totalLeave and activeMembersCount BEFORE rendering banner
+            let totalLeave = (data.team_total_leaves !== undefined)
+                ? data.team_total_leaves
+                : statsList.reduce((acc, s) => acc + (s.leave_count !== undefined ? s.leave_count : ((s.sick_days || 0) + (s.personal_days || 0) + (s.black_days || 0) + (s.wfh_days || 0))), 0);
 
             const activeMembersCount = statsList.filter(s => (s.ot_count || 0) > 0 || (s.leave_count || 0) > 0).length;
 
@@ -2270,11 +2280,11 @@
                         </div>
                         <div style="color:var(--text-muted); font-size:0.82rem;">
                             <span style="color:#818cf8; margin-right:10px;"><i class="fa-solid fa-user-clock"></i> 加班共 <strong>${totalOt}h</strong></span>
-                            <span style="color:#38bdf8;"><i class="fa-solid fa-plane-departure"></i> 請假共 <strong>${data.team_total_leaves !== undefined ? data.team_total_leaves : totalLeave}筆</strong></span>
+                            <span style="color:#38bdf8;"><i class="fa-solid fa-plane-departure"></i> 請假共 <strong>${totalLeave}筆</strong></span>
                         </div>
                     `;
                 } else {
-                    const emptyNotice = (activeMembersCount === 0) 
+                    const emptyNotice = (activeMembersCount === 0 && totalOt === 0 && totalLeave === 0) 
                         ? `<span class="badge" style="background:rgba(245,158,11,0.15); color:#fcd34d; font-size:0.8rem; margin-left:0.4rem;"><i class="fa-solid fa-circle-info"></i> 本週全員皆無加班或請假紀錄 (均為0)</span>` 
                         : '';
                     bannerEl.innerHTML = `
@@ -2307,8 +2317,6 @@
 
                 const googleComp = item.google_comp_total !== undefined ? item.google_comp_total : (item.google_comp_days || 0);
                 const leaveCount = item.leave_count !== undefined ? item.leave_count : ((item.sick_days || 0) + (item.personal_days || 0) + (item.black_days || 0) + (item.wfh_days || 0));
-                
-                totalLeave += leaveCount;
 
                 const hasActivity = (otCount > 0 || leaveCount > 0);
                 if (isDashActiveOnly && !hasActivity) {

@@ -1219,6 +1219,8 @@ def get_monthly_stats(month=None, start_date=None, end_date=None):
                 "comp_days_used": round(w_comp_used, 2)
             })
 
+        team_total_leaves = sum(s.get('leave_count', 0) for s in stats_list)
+
         return {
             "stats": stats_list,
             "team_total_hours": round(team_total_hours, 2),
@@ -1226,5 +1228,6 @@ def get_monthly_stats(month=None, start_date=None, end_date=None):
             "team_weekend_hours": round(team_weekend_hours, 2),
             "team_est_comp_hours": team_est_comp_hours,
             "team_est_comp_days": team_est_comp_days,
+            "team_total_leaves": team_total_leaves,
             "weekly_summary": weekly_summary
         }
