@@ -965,21 +965,27 @@ def get_monthly_stats(month=None, start_date=None, end_date=None):
                 m_clause = " AND date LIKE ?"
                 m_params = [f"{m_clean}%"]
 
-        # 1. Get list of active team members
+        # 1. Get list of active team members plus any members who have records in this period
         db_members = get_all_members()
-        names = [m['name'] for m in db_members]
-        
-        # Fallback: distinct names from records if team_members table is empty
-        if not names:
-            query_names = f'''
-                SELECT DISTINCT name FROM (
-                    SELECT name FROM overtime_records WHERE 1=1 {m_clause}
-                    UNION
-                    SELECT name FROM leave_records WHERE 1=1 {m_clause}
-                ) ORDER BY name ASC
-            '''
-            cursor.execute(query_names, m_params + m_params)
-            names = [r[0] for r in cursor.fetchall()]
+        member_name_list = [m['name'].strip() for m in db_members if m.get('name') and m['name'].strip()]
+
+        query_record_names = f'''
+            SELECT DISTINCT TRIM(name) FROM (
+                SELECT name FROM overtime_records WHERE 1=1 {m_clause}
+                UNION
+                SELECT name FROM leave_records WHERE 1=1 {m_clause}
+            ) WHERE name IS NOT NULL AND TRIM(name) != ''
+        '''
+        cursor.execute(query_record_names, m_params + m_params)
+        rec_names = [r[0] for r in cursor.fetchall() if r[0]]
+
+        combined_names = []
+        seen_names = set()
+        for n in member_name_list + rec_names:
+            if n.lower() not in seen_names:
+                seen_names.add(n.lower())
+                combined_names.append(n)
+        names = combined_names
 
         stats_list = []
         team_total_hours = 0.0
@@ -990,7 +996,7 @@ def get_monthly_stats(month=None, start_date=None, end_date=None):
         
         for name in names:
             # Overtime breakdown: query all overtime records for this member
-            ot_query = f"SELECT date, hours, note, is_special, special_reason, reason FROM overtime_records WHERE LOWER(name) = LOWER(?){m_clause}"
+            ot_query = f"SELECT date, hours, note, is_special, special_reason, reason FROM overtime_records WHERE LOWER(TRIM(name)) = LOWER(TRIM(?)){m_clause}"
             ot_params = [name] + m_params
             cursor.execute(ot_query, ot_params)
             ot_rows = cursor.fetchall()
@@ -1058,7 +1064,7 @@ def get_monthly_stats(month=None, start_date=None, end_date=None):
                 })
 
             # Leaves details
-            lv_query = f"SELECT leave_type, duration, google_comp_days FROM leave_records WHERE LOWER(name) = LOWER(?){m_clause}"
+            lv_query = f"SELECT leave_type, duration, google_comp_days FROM leave_records WHERE LOWER(TRIM(name)) = LOWER(TRIM(?)){m_clause}"
             lv_params = [name] + m_params
             cursor.execute(lv_query, lv_params)
             leaves = cursor.fetchall()
