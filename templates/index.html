@@ -1174,7 +1174,7 @@
             <div class="form-grid">
                 <div class="form-group">
                     <label>日期 (例如: 2025/07/27)</label>
-                    <input type="text" id="modalDate">
+                    <input type="text" id="modalDate" oninput="updateModalCompBadge()">
                 </div>
                 <div class="form-group">
                     <label>姓名</label>
@@ -1371,6 +1371,9 @@
     <script>
         let currentParsedData = { overtime_records: [], leave_records: [] };
         let pendingAdminCallback = null;
+        let memberLocationMap = {};
+        let memberQuotaMap = {};
+        let locationHistoriesCache = [];
 
         function getAuthHeaders(extra = {}) {
             const pw = sessionStorage.getItem('admin_password') || '';
@@ -1455,6 +1458,19 @@
         // ─────────────────────────── 週次計算與日期工具 (Monday to Sunday Cycle) ───────────────────────────
         const WEEKDAY_NAMES_ZH = ['(日)', '(一)', '(二)', '(三)', '(四)', '(五)', '(六)'];
 
+        function normDate(d) {
+            if (!d) return '';
+            let s = String(d).trim().replace(/-/g, '/');
+            if (s.length === 8 && !isNaN(s)) {
+                return `${s.substring(0,4)}/${s.substring(4,6)}/${s.substring(6,8)}`;
+            }
+            const parts = s.split('/');
+            if (parts.length === 3) {
+                return `${String(parts[0]).padStart(4,'0')}/${String(parts[1]).padStart(2,'0')}/${String(parts[2]).padStart(2,'0')}`;
+            }
+            return s;
+        }
+
         function parseDateObject(dateStr) {
             if (!dateStr) return null;
             const parts = dateStr.replace(/-/g, '/').split('/');
@@ -1475,6 +1491,54 @@
             if (!d || isNaN(d.getTime())) return false;
             const day = d.getDay();
             return day === 0 || day === 6; // Sunday (0) or Saturday (6)
+        }
+
+        function getMemberLocationAtDate(name, dateStr) {
+            if (!name) return '台灣辦公室';
+            let memberLoc = '';
+            if (dateStr && locationHistoriesCache && locationHistoriesCache.length > 0) {
+                const dClean = normDate(dateStr);
+                const matching = locationHistoriesCache.filter(h => {
+                    if (h.name.toLowerCase() !== name.toLowerCase()) return false;
+                    const hStart = normDate(h.start_date);
+                    const hEnd = normDate(h.end_date);
+                    return hStart <= dClean && (!hEnd || hEnd >= dClean);
+                });
+                if (matching.length > 0) {
+                    matching.sort((a, b) => normDate(b.start_date).localeCompare(normDate(a.start_date)));
+                    memberLoc = matching[0].location;
+                }
+            }
+            if (!memberLoc && name) {
+                memberLoc = memberLocationMap[name] || '台灣辦公室';
+            }
+            return memberLoc || '台灣辦公室';
+        }
+
+        function isTaiwanLocation(locationStr) {
+            if (!locationStr) return true;
+            const loc = String(locationStr).trim().toLowerCase();
+            if (loc.includes('gdl') || loc.includes('美國') || loc.includes('usa') || loc.includes('越南') || loc.includes('mexico')) {
+                return false;
+            }
+            return loc.includes('台灣') || loc.includes('taiwan') || loc.includes('遠雄') || loc.includes('辦公室') || loc === '';
+        }
+
+        function checkTaiwanLeaveWeekend(name, dateStr) {
+            if (!dateStr) return { invalid: false, msg: '' };
+            const d = parseDateObject(dateStr);
+            if (!d || isNaN(d.getTime())) return { invalid: false, msg: '' };
+            // Saturday (6) or Sunday (0)
+            if (d.getDay() === 6 || d.getDay() === 0) {
+                const loc = getMemberLocationAtDate(name, dateStr);
+                if (isTaiwanLocation(loc)) {
+                    return {
+                        invalid: true,
+                        msg: '目前台灣地區禮拜六日無上班 請重新檢查一次'
+                    };
+                }
+            }
+            return { invalid: false, msg: '' };
         }
 
         // Generate weeks for a given year & month (Monday to Sunday cycle)
@@ -2667,8 +2731,10 @@
             lvRecords.forEach((r, idx) => {
                 const tr = document.createElement('tr');
                 const badgeClass = getLeaveBadgeClass(r.leave_type);
+                const weekendCheck = checkTaiwanLeaveWeekend(r.name, r.date);
+                const warnBadge = weekendCheck.invalid ? `<span class="badge" style="background:rgba(239,68,68,0.2);color:#fca5a5;border:1px solid rgba(239,68,68,0.4);margin-left:0.4rem;" title="${weekendCheck.msg}"><i class="fa-solid fa-triangle-exclamation"></i> 台灣週末無上班</span>` : '';
                 tr.innerHTML = `
-                    <td>${r.date}</td>
+                    <td>${r.date} ${getChineseWeekday(r.date)} ${warnBadge}</td>
                     <td><strong>${r.name}</strong></td>
                     <td><span class="badge ${badgeClass}">${r.leave_type}</span></td>
                     <td>${r.duration}</td>
@@ -2834,6 +2900,21 @@
                 return;
             }
 
+            const dateInput = document.getElementById('modalDate');
+            const dateVal = dateInput ? dateInput.value.trim() : '';
+            if (dateVal) {
+                const weekendCheck = checkTaiwanLeaveWeekend(name, dateVal);
+                if (weekendCheck.invalid) {
+                    badgeContainer.style.display = 'flex';
+                    badgeContainer.style.background = 'rgba(239, 68, 68, 0.2)';
+                    badgeContainer.style.borderColor = 'rgba(239, 68, 68, 0.6)';
+                    badgeContainer.style.color = '#fca5a5';
+                    const textEl = document.getElementById('modalCompBadgeText');
+                    textEl.innerHTML = `🚫 <strong>${name}</strong> 的請假日期為 ${getChineseWeekday(dateVal)}，<strong>目前台灣地區禮拜六日無上班 請重新檢查一次</strong>`;
+                    return;
+                }
+            }
+
             const mData = memberQuotaMap[name] || memberQuotaMap[Object.keys(memberQuotaMap).find(k => k.toLowerCase() === name.toLowerCase())];
             const quota = mData ? mData.quota : 0;
             const used = mData ? mData.used : 0;
@@ -2978,6 +3059,14 @@
                 return;
             }
 
+            if (type === 'edit_leave_db' || type === 'add_leave' || type === 'leave') {
+                const chk = checkTaiwanLeaveWeekend(name, date);
+                if (chk.invalid) {
+                    alert(chk.msg);
+                    return;
+                }
+            }
+
             const selectedDeducted = document.querySelector('input[name="modalCompDeducted"]:checked');
             const is_comp_deducted = selectedDeducted ? parseInt(selectedDeducted.value) : 1;
 
@@ -3100,6 +3189,13 @@
         // Confirm Import
         function confirmImport() {
             ensureAdminUnlocked(async () => {
+                const invalidLeaves = (currentParsedData.leave_records || []).filter(item => checkTaiwanLeaveWeekend(item.name, item.date).invalid);
+                if (invalidLeaves.length > 0) {
+                    const first = invalidLeaves[0];
+                    alert(`目前台灣地區禮拜六日無上班 請重新檢查一次（${first.name} ${first.date}）`);
+                    return;
+                }
+
                 try {
                     const res = await fetch('/api/confirm_import', {
                         method: 'POST',

@@ -357,6 +357,36 @@ def get_member_location_at_date(name, date_str):
     return '台灣辦公室'
 
 
+def is_taiwan_location(location):
+    if not location:
+        return True
+    loc = str(location).strip().lower()
+    if 'gdl' in loc or '美國' in loc or 'usa' in loc or '越南' in loc or 'mexico' in loc:
+        return False
+    return '台灣' in loc or 'taiwan' in loc or '遠雄' in loc or '辦公室' in loc or loc == ''
+
+
+def check_taiwan_leave_weekend(name, date_str):
+    """
+    Checks if a leave record for a person on a specific date is in Taiwan and on a weekend (Saturday / Sunday).
+    Returns (is_invalid, error_message).
+    """
+    if not date_str:
+        return False, ""
+    d_clean = normalize_date_fmt(date_str)
+    try:
+        from datetime import datetime
+        dt = datetime.strptime(d_clean, "%Y/%m/%d")
+        # 5 is Saturday, 6 is Sunday
+        if dt.weekday() in (5, 6):
+            loc = get_member_location_at_date(name, date_str)
+            if is_taiwan_location(loc):
+                return True, "目前台灣地區禮拜六日無上班 請重新檢查一次"
+    except Exception:
+        pass
+    return False, ""
+
+
 
 def add_member(name, location='台灣辦公室', google_comp_quota=0.0):
     name = name.strip()

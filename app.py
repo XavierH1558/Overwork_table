@@ -168,6 +168,15 @@ def confirm_import():
     ot_list = data.get('overtime_records', [])
     lv_list = data.get('leave_records', [])
     
+    # Validate Taiwan weekend leave records
+    for lv in lv_list:
+        is_invalid, err_msg = database.check_taiwan_leave_weekend(lv.get('name'), lv.get('date'))
+        if is_invalid:
+            return jsonify({
+                "status": "error",
+                "message": f"{err_msg} ({lv.get('name')} {lv.get('date')})"
+            }), 400
+    
     ins_ot, ins_lv = database.bulk_insert(ot_list, lv_list)
     skipped_ot = len(ot_list) - ins_ot
     skipped_lv = len(lv_list) - ins_lv
@@ -320,6 +329,10 @@ def add_leave():
     reason = data.get('reason', '')
     is_comp_deducted = int(data.get('is_comp_deducted', 1))
     
+    is_invalid, err_msg = database.check_taiwan_leave_weekend(name, date)
+    if is_invalid:
+        return jsonify({"status": "error", "message": err_msg}), 400
+    
     rec_id = database.add_leave_record(date, name, leave_type, duration, google_comp_days, reason, is_comp_deducted)
     return jsonify({"status": "success", "id": rec_id})
 
@@ -335,6 +348,10 @@ def update_leave(rec_id):
     google_comp_days = float(data.get('google_comp_days', 0.0))
     reason = data.get('reason', '')
     is_comp_deducted = int(data.get('is_comp_deducted', 1))
+    
+    is_invalid, err_msg = database.check_taiwan_leave_weekend(name, date)
+    if is_invalid:
+        return jsonify({"status": "error", "message": err_msg}), 400
     
     database.update_leave_record(rec_id, date, name, leave_type, duration, google_comp_days, reason, is_comp_deducted)
     return jsonify({"status": "success"})
