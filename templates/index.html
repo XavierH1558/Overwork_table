@@ -571,6 +571,134 @@
             align-items: center;
             gap: 0.5rem;
         }
+
+        /* Weekly Navigation Pills Bar */
+        .week-pills-container {
+            display: flex;
+            align-items: center;
+            gap: 0.6rem;
+            overflow-x: auto;
+            padding: 0.35rem 0.2rem 0.65rem 0.2rem;
+            margin-bottom: 0.25rem;
+            scrollbar-width: thin;
+        }
+
+        .week-pill {
+            display: inline-flex;
+            flex-direction: column;
+            gap: 2px;
+            padding: 0.45rem 0.9rem;
+            border-radius: 0.55rem;
+            background: rgba(30, 41, 59, 0.7);
+            border: 1px solid var(--card-border);
+            color: var(--text-muted);
+            cursor: pointer;
+            font-size: 0.82rem;
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+            white-space: nowrap;
+            user-select: none;
+            flex-shrink: 0;
+        }
+
+        .week-pill:hover {
+            background: rgba(255, 255, 255, 0.08);
+            border-color: rgba(255, 255, 255, 0.2);
+            color: var(--text-main);
+            transform: translateY(-1px);
+        }
+
+        .week-pill.active {
+            background: linear-gradient(135deg, rgba(79, 70, 229, 0.35), rgba(139, 92, 246, 0.25));
+            border-color: var(--primary);
+            color: #ffffff;
+            box-shadow: 0 4px 14px rgba(79, 70, 229, 0.3);
+            font-weight: 600;
+        }
+
+        .week-pill .pill-top {
+            display: flex;
+            align-items: center;
+            gap: 0.4rem;
+            font-weight: 600;
+            font-size: 0.85rem;
+        }
+
+        .week-pill .pill-bottom {
+            font-size: 0.72rem;
+            color: var(--text-muted);
+            opacity: 0.9;
+        }
+
+        .week-pill.active .pill-bottom {
+            color: #c7d2fe;
+            opacity: 1;
+        }
+
+        /* Week Group Header Row in Table */
+        tr.week-group-header td {
+            background: linear-gradient(90deg, rgba(79, 70, 229, 0.18) 0%, rgba(30, 41, 59, 0.7) 100%) !important;
+            border-top: 1px solid rgba(99, 102, 241, 0.35) !important;
+            border-bottom: 1px solid rgba(99, 102, 241, 0.25) !important;
+            padding: 0.55rem 0.9rem !important;
+            color: #ffffff;
+        }
+
+        .week-group-title {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 1rem;
+            width: 100%;
+            flex-wrap: wrap;
+        }
+
+        .week-group-left {
+            display: flex;
+            align-items: center;
+            gap: 0.6rem;
+            font-size: 0.88rem;
+            font-weight: 700;
+            color: #c7d2fe;
+        }
+
+        .week-group-stats {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.6rem;
+            font-size: 0.8rem;
+            font-weight: 500;
+            color: var(--text-muted);
+        }
+
+        .week-group-stats .stat-tag {
+            background: rgba(15, 23, 42, 0.6);
+            padding: 0.15rem 0.55rem;
+            border-radius: 1rem;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            color: #cbd5e1;
+        }
+
+        /* Week Badge */
+        .badge-week {
+            background: rgba(99, 102, 241, 0.15);
+            color: #a5b4fc;
+            border: 1px solid rgba(99, 102, 241, 0.35);
+            font-size: 0.73rem;
+            padding: 0.12rem 0.45rem;
+            border-radius: 1rem;
+            margin-left: 4px;
+        }
+
+        .weekday-tag {
+            font-size: 0.82rem;
+            margin-left: 3px;
+            color: var(--text-muted);
+        }
+
+        .weekday-tag.weekend {
+            color: #fcd34d;
+            font-weight: 600;
+        }
     </style>
 </head>
 <body>
@@ -623,6 +751,11 @@
 
         <!-- Dashboard Tab -->
         <div id="tab-dashboard" class="tab-content active">
+            <!-- Weekly Breakdown Navigation Pills -->
+            <div id="dashWeekPills" class="week-pills-container">
+                <!-- Dynamically populated via JS -->
+            </div>
+
             <!-- Stats -->
             <div class="stats-grid">
                 <div class="stat-card">
@@ -662,7 +795,14 @@
                     <div class="card-title">
                         <i class="fa-solid fa-table-list" style="color: var(--accent);"></i> <span id="dashTitleLabel">成員月度統計摘要</span>
                     </div>
-                    <!-- Filter bar (Month selected via top header) -->
+                    <div class="filter-bar">
+                        <label style="font-size:0.85rem; color:var(--text-muted); display:flex; align-items:center; gap:0.35rem;">
+                            <i class="fa-regular fa-calendar-days" style="color:#818cf8;"></i> 週次篩選：
+                        </label>
+                        <select id="dashWeekSelect" onchange="onDashWeekChange(this.value)" style="width: 180px;">
+                            <option value="all">全部週次 (全月統計)</option>
+                        </select>
+                    </div>
                 </div>
                 <div class="table-responsive">
                     <table>
@@ -696,12 +836,18 @@
                         <i class="fa-solid fa-clock" style="color: #818cf8;"></i> 加班紀錄清單
                     </div>
                     <div class="filter-bar">
-                        <select id="otTypeFilter" onchange="loadOvertime()" style="width: 130px;">
+                        <select id="otWeekFilter" onchange="loadOvertime()" style="width: 175px;">
+                            <option value="all">全部週次 (全月)</option>
+                        </select>
+                        <select id="otTypeFilter" onchange="loadOvertime()" style="width: 125px;">
                             <option value="">全部類型</option>
                             <option value="平日加班">平日加班</option>
                             <option value="假日加班">假日加班</option>
                         </select>
-                        <input type="text" id="otSearch" placeholder="搜尋人員/原因/類型..." oninput="loadOvertime()">
+                        <input type="text" id="otSearch" placeholder="搜尋人員/原因/類型/日期..." oninput="loadOvertime()">
+                        <button class="btn btn-secondary" id="btnOtGroupToggle" onclick="toggleOtGrouping()" style="border-color: rgba(99,102,241,0.4); color: #a5b4fc;" title="切換分週群組檢視或平鋪列表">
+                            <i class="fa-solid fa-layer-group"></i> 依週次分組：開
+                        </button>
                         <button class="btn btn-secondary" onclick="openAswExportModal()" style="border-color: rgba(34, 197, 94, 0.5); color: #86efac;">
                             <i class="fa-solid fa-file-excel"></i> 輸出 ASW 格式表
                         </button>
@@ -740,7 +886,10 @@
                         <i class="fa-solid fa-calendar-xmark" style="color: #38bdf8;"></i> 請假紀錄清單
                     </div>
                     <div class="filter-bar">
-                        <select id="leaveTypeFilter" onchange="loadLeaves()" style="width: 130px;">
+                        <select id="leaveWeekFilter" onchange="loadLeaves()" style="width: 175px;">
+                            <option value="all">全部週次 (全月)</option>
+                        </select>
+                        <select id="leaveTypeFilter" onchange="loadLeaves()" style="width: 125px;">
                             <option value="">全部假別</option>
                             <option value="黑假">黑假</option>
                             <option value="WFH">WFH</option>
@@ -751,7 +900,10 @@
                             <option value="出勤確認">出勤確認</option>
                             <option value="因公外出">因公外出</option>
                         </select>
-                        <input type="text" id="leaveSearch" placeholder="搜尋人員/原因/假別..." oninput="loadLeaves()">
+                        <input type="text" id="leaveSearch" placeholder="搜尋人員/原因/假別/日期..." oninput="loadLeaves()">
+                        <button class="btn btn-secondary" id="btnLeaveGroupToggle" onclick="toggleLeaveGrouping()" style="border-color: rgba(6,182,212,0.4); color: #67e8f9;" title="切換分週群組檢視或平鋪列表">
+                            <i class="fa-solid fa-layer-group"></i> 依週次分組：開
+                        </button>
                         <button class="btn btn-primary" onclick="showAddLeaveModal()">
                             <i class="fa-solid fa-plus"></i> 新增請假紀錄
                         </button>
@@ -1300,6 +1452,173 @@
             }
         }
 
+        // ─────────────────────────── 週次計算與日期工具 (Monday to Sunday Cycle) ───────────────────────────
+        const WEEKDAY_NAMES_ZH = ['(日)', '(一)', '(二)', '(三)', '(四)', '(五)', '(六)'];
+
+        function parseDateObject(dateStr) {
+            if (!dateStr) return null;
+            const parts = dateStr.replace(/-/g, '/').split('/');
+            if (parts.length === 3) {
+                return new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10));
+            }
+            return null;
+        }
+
+        function getChineseWeekday(dateStr) {
+            const d = parseDateObject(dateStr);
+            if (!d || isNaN(d.getTime())) return '';
+            return WEEKDAY_NAMES_ZH[d.getDay()];
+        }
+
+        function isWeekend(dateStr) {
+            const d = parseDateObject(dateStr);
+            if (!d || isNaN(d.getTime())) return false;
+            const day = d.getDay();
+            return day === 0 || day === 6; // Sunday (0) or Saturday (6)
+        }
+
+        // Generate weeks for a given year & month (Monday to Sunday cycle)
+        function getWeeksInMonth(year, month) {
+            const numDays = new Date(year, month, 0).getDate();
+            const weeks = [];
+            let curDay = 1;
+            let wIdx = 1;
+
+            while (curDay <= numDays) {
+                const sDate = new Date(year, month - 1, curDay);
+                const jsDay = sDate.getDay();
+                // Monday is 1, Sunday is 0. Days until Sunday:
+                const daysUntilSunday = (jsDay === 0) ? 0 : (7 - jsDay);
+                const endDay = Math.min(curDay + daysUntilSunday, numDays);
+
+                const sStr = `${year}/${String(month).padStart(2, '0')}/${String(curDay).padStart(2, '0')}`;
+                const eStr = `${year}/${String(month).padStart(2, '0')}/${String(endDay).padStart(2, '0')}`;
+                const rangeShort = `${String(month).padStart(2, '0')}/${String(curDay).padStart(2, '0')} ~ ${String(month).padStart(2, '0')}/${String(endDay).padStart(2, '0')}`;
+                const label = `第 ${wIdx} 週 (${rangeShort})`;
+
+                weeks.push({
+                    weekIndex: wIdx,
+                    startDate: sStr,
+                    endDate: eStr,
+                    rangeText: rangeShort,
+                    label: label,
+                    startDay: curDay,
+                    endDay: endDay
+                });
+
+                curDay = endDay + 1;
+                wIdx++;
+            }
+            return weeks;
+        }
+
+        function getWeekInfoForDate(dateStr, monthWeeks) {
+            if (!dateStr || !monthWeeks || monthWeeks.length === 0) return null;
+            const dObj = parseDateObject(dateStr);
+            if (!dObj || isNaN(dObj.getTime())) return null;
+            const dayNum = dObj.getDate();
+
+            for (let w of monthWeeks) {
+                if (dayNum >= w.startDay && dayNum <= w.endDay) {
+                    return w;
+                }
+            }
+            return null;
+        }
+
+        let currentSelectedDashWeek = 'all';
+        let isOtGroupedByWeek = true;
+        let isLeaveGroupedByWeek = true;
+        let currentMonthWeeks = [];
+
+        function updateAllWeekFilterDropdowns(weeks) {
+            currentMonthWeeks = weeks;
+            
+            // 1. Dash week selector
+            const dashSelect = document.getElementById('dashWeekSelect');
+            if (dashSelect) {
+                const currentVal = dashSelect.value;
+                let html = '<option value="all">全部週次 (全月統計)</option>';
+                weeks.forEach(w => {
+                    html += `<option value="${w.weekIndex}">${w.label}</option>`;
+                });
+                dashSelect.innerHTML = html;
+                if (weeks.some(w => String(w.weekIndex) === currentVal)) {
+                    dashSelect.value = currentVal;
+                    currentSelectedDashWeek = currentVal;
+                } else {
+                    dashSelect.value = 'all';
+                    currentSelectedDashWeek = 'all';
+                }
+            }
+
+            // 2. OT week selector
+            const otSelect = document.getElementById('otWeekFilter');
+            if (otSelect) {
+                const curVal = otSelect.value;
+                let html = '<option value="all">全部週次 (全月)</option>';
+                weeks.forEach(w => {
+                    html += `<option value="${w.weekIndex}">${w.label}</option>`;
+                });
+                otSelect.innerHTML = html;
+                if (weeks.some(w => String(w.weekIndex) === curVal)) {
+                    otSelect.value = curVal;
+                } else {
+                    otSelect.value = 'all';
+                }
+            }
+
+            // 3. Leave week selector
+            const lvSelect = document.getElementById('leaveWeekFilter');
+            if (lvSelect) {
+                const curVal = lvSelect.value;
+                let html = '<option value="all">全部週次 (全月)</option>';
+                weeks.forEach(w => {
+                    html += `<option value="${w.weekIndex}">${w.label}</option>`;
+                });
+                lvSelect.innerHTML = html;
+                if (weeks.some(w => String(w.weekIndex) === curVal)) {
+                    lvSelect.value = curVal;
+                } else {
+                    lvSelect.value = 'all';
+                }
+            }
+        }
+
+        function onDashWeekChange(weekVal) {
+            currentSelectedDashWeek = weekVal;
+            loadStats();
+        }
+
+        function selectDashWeekPill(weekVal) {
+            currentSelectedDashWeek = String(weekVal);
+            const selectEl = document.getElementById('dashWeekSelect');
+            if (selectEl) selectEl.value = currentSelectedDashWeek;
+            loadStats();
+        }
+
+        function toggleOtGrouping() {
+            isOtGroupedByWeek = !isOtGroupedByWeek;
+            const btn = document.getElementById('btnOtGroupToggle');
+            if (btn) {
+                btn.innerHTML = isOtGroupedByWeek 
+                    ? '<i class="fa-solid fa-layer-group"></i> 依週次分組：開' 
+                    : '<i class="fa-solid fa-list"></i> 平鋪列表：開';
+            }
+            loadOvertime();
+        }
+
+        function toggleLeaveGrouping() {
+            isLeaveGroupedByWeek = !isLeaveGroupedByWeek;
+            const btn = document.getElementById('btnLeaveGroupToggle');
+            if (btn) {
+                btn.innerHTML = isLeaveGroupedByWeek 
+                    ? '<i class="fa-solid fa-layer-group"></i> 依週次分組：開' 
+                    : '<i class="fa-solid fa-list"></i> 平鋪列表：開';
+            }
+            loadLeaves();
+        }
+
         // Initialize Month Selectors (Starting from 2026/07)
         function initMonthSelector() {
             const headerSelect = document.getElementById('monthSelect');
@@ -1352,6 +1671,7 @@
             if (el) el.value = val;
             
             localStorage.setItem('selectedMonth', val);
+            currentSelectedDashWeek = 'all';
 
             const parts = val.split('/');
             const monthText = parts.length === 2 ? `${parts[0]}年${parts[1]}月` : val;
@@ -1458,25 +1778,70 @@
         // Load Stats & Summary Table
         async function loadStats() {
             const month = document.getElementById('monthSelect').value || '2026/07';
-            
-            // Dynamic Chinese Month formatting
             const parts = month.split('/');
+            const yearNum = parseInt(parts[0], 10);
+            const monthNum = parseInt(parts[1], 10);
             const monthZh = (parts.length === 2) ? `${parts[0]}年${parts[1]}月` : month;
 
+            const weeks = getWeeksInMonth(yearNum, monthNum);
+            // Check if month changed to update dropdown options
+            if (!currentMonthWeeks || currentMonthWeeks.length === 0 || currentMonthWeeks[0].startDate.substring(0,7) !== `${yearNum}/${String(monthNum).padStart(2,'0')}`) {
+                updateAllWeekFilterDropdowns(weeks);
+            }
+
+            let queryUrl = `/api/stats?month=${encodeURIComponent(month)}`;
+            let weekObj = null;
+
+            if (currentSelectedDashWeek && currentSelectedDashWeek !== 'all') {
+                weekObj = weeks.find(w => String(w.weekIndex) === String(currentSelectedDashWeek));
+                if (weekObj) {
+                    queryUrl = `/api/stats?month=${encodeURIComponent(month)}&start_date=${encodeURIComponent(weekObj.startDate)}&end_date=${encodeURIComponent(weekObj.endDate)}`;
+                }
+            }
+
+            // Dynamic Titles
             const dashTitle = document.getElementById('dashTitleLabel');
-            if (dashTitle) dashTitle.innerHTML = `<span style="color:#a5b4fc;font-weight:700;">${monthZh}</span> 成員月度統計摘要`;
+            if (dashTitle) {
+                if (weekObj) {
+                    dashTitle.innerHTML = `<span style="color:#a5b4fc;font-weight:700;">${monthZh} ${weekObj.label}</span> 成員統計摘要`;
+                } else {
+                    dashTitle.innerHTML = `<span style="color:#a5b4fc;font-weight:700;">${monthZh}</span> 成員月度統計摘要 (全月)`;
+                }
+            }
 
             const otTitle = document.getElementById('statOtTitle');
-            if (otTitle) otTitle.innerHTML = `<span style="color:#818cf8;font-size:0.9rem;font-weight:600;">${monthZh}</span> 加班總時數`;
+            if (otTitle) otTitle.innerHTML = `<span style="color:#818cf8;font-size:0.9rem;font-weight:600;">${weekObj ? '第' + weekObj.weekIndex + '週' : monthZh}</span> 加班總時數`;
 
             const leaveTitle = document.getElementById('statLeaveTitle');
-            if (leaveTitle) leaveTitle.innerHTML = `<span style="color:#38bdf8;font-size:0.9rem;font-weight:600;">${monthZh}</span> 請假總筆數`;
+            if (leaveTitle) leaveTitle.innerHTML = `<span style="color:#38bdf8;font-size:0.9rem;font-weight:600;">${weekObj ? '第' + weekObj.weekIndex + '週' : monthZh}</span> 請假總筆數`;
 
             const estTitleEl = document.getElementById('statEstCompTitle');
-            if (estTitleEl) estTitleEl.innerHTML = `<span style="color:#4ade80;font-size:0.9rem;font-weight:600;">${monthZh}</span> 加班預估可獲補休`;
+            if (estTitleEl) estTitleEl.innerHTML = `<span style="color:#4ade80;font-size:0.9rem;font-weight:600;">${weekObj ? '第' + weekObj.weekIndex + '週' : monthZh}</span> 加班預估可獲補休`;
 
-            const res = await fetch(`/api/stats?month=${encodeURIComponent(month)}`);
+            const res = await fetch(queryUrl);
             const data = await res.json();
+
+            // Render Weekly Navigation Pills
+            const pillsContainer = document.getElementById('dashWeekPills');
+            if (pillsContainer && data.weekly_summary) {
+                let pillsHtml = `
+                    <div class="week-pill ${currentSelectedDashWeek === 'all' ? 'active' : ''}" onclick="selectDashWeekPill('all')">
+                        <div class="pill-top"><i class="fa-regular fa-calendar"></i> 全月總覽</div>
+                        <div class="pill-bottom">OT ${data.team_total_hours || 0}h · ${monthZh}</div>
+                    </div>
+                `;
+                (data.weekly_summary || []).forEach(wSummary => {
+                    const isAct = String(currentSelectedDashWeek) === String(wSummary.week_index);
+                    const pillStat = `OT ${wSummary.ot_hours}h · ${wSummary.leave_count}筆假`;
+                    pillsHtml += `
+                        <div class="week-pill ${isAct ? 'active' : ''}" onclick="selectDashWeekPill('${wSummary.week_index}')">
+                            <div class="pill-top"><i class="fa-regular fa-calendar-days"></i> 第 ${wSummary.week_index} 週 <span style="font-size:0.75rem;opacity:0.85;">(${wSummary.range_text})</span></div>
+                            <div class="pill-bottom">${pillStat}</div>
+                        </div>
+                    `;
+                });
+                pillsContainer.innerHTML = pillsHtml;
+            }
 
             const statsList = Array.isArray(data) ? data : (data.stats || []);
             let totalOt = data.team_total_hours || 0;
@@ -1512,7 +1877,7 @@
                     ? `<span class="badge" style="background:rgba(245,158,11,0.2);color:#fcd34d;border:1px solid rgba(245,158,11,0.4);">${weekendOt} hr</span>` 
                     : `<span style="color: var(--text-muted); font-size: 0.9rem;">0.0 hr</span>`;
 
-                const estTitle = `當月加班預估換算補休細節：\n• 平日加班：${weekdayOt}h × 1.5 = ${weekdayOt * 1.5}h\n• 假日加班：${weekendOt}h × 2.0 = ${weekendOt * 2.0}h\n• 總換算補休：${estHours}h / 8 = ${estDays}天`;
+                const estTitle = `加班預估換算補休細節：\n• 平日加班：${weekdayOt}h × 1.5 = ${weekdayOt * 1.5}h\n• 假日加班：${weekendOt}h × 2.0 = ${weekendOt * 2.0}h\n• 總換算補休：${estHours}h / 8 = ${estDays}天`;
                 const estBadge = estHours > 0 
                     ? `<span class="badge" style="background:rgba(34,197,94,0.18);color:#4ade80;border:1px solid rgba(34,197,94,0.35);cursor:pointer;" title="${estTitle}"><i class="fa-solid fa-plus"></i> ${estDays} 天 <span style="font-size:0.75rem;opacity:0.85;">(+${estHours}h)</span></span>`
                     : `<span style="color:var(--text-muted);font-size:0.88rem;">-</span>`;
@@ -1705,48 +2070,170 @@
         async function loadOvertime() {
             await refreshMemberLocationMap();
             const month = document.getElementById('monthSelect').value;
+            const parts = month.split('/');
+            const yearNum = parseInt(parts[0], 10);
+            const monthNum = parseInt(parts[1], 10);
+            const monthWeeks = getWeeksInMonth(yearNum, monthNum);
+
             const search = document.getElementById('otSearch').value;
             const otType = document.getElementById('otTypeFilter').value;
-            const res = await fetch(`/api/overtime?month=${encodeURIComponent(month)}&search=${encodeURIComponent(search)}&ot_type=${encodeURIComponent(otType)}`);
+            const weekFilter = document.getElementById('otWeekFilter') ? document.getElementById('otWeekFilter').value : 'all';
+
+            let queryUrl = `/api/overtime?month=${encodeURIComponent(month)}&search=${encodeURIComponent(search)}&ot_type=${encodeURIComponent(otType)}`;
+            if (weekFilter && weekFilter !== 'all') {
+                const w = monthWeeks.find(x => String(x.weekIndex) === String(weekFilter));
+                if (w) {
+                    queryUrl = `/api/overtime?start_date=${encodeURIComponent(w.startDate)}&end_date=${encodeURIComponent(w.endDate)}&search=${encodeURIComponent(search)}&ot_type=${encodeURIComponent(otType)}`;
+                }
+            }
+
+            const res = await fetch(queryUrl);
             const records = await res.json();
 
             const tbody = document.getElementById('overtimeTableBody');
             tbody.innerHTML = '';
 
-            records.forEach(r => {
-                const tr = document.createElement('tr');
-                const isWeekend = r.note === '假日加班' || !!r.is_special;
-                const noteBadge = isWeekend 
-                    ? `<span class="badge" style="background:rgba(245,158,11,0.2);color:#fcd34d;border:1px solid rgba(245,158,11,0.4)">假日加班</span>` 
-                    : `<span class="badge badge-ot">平日加班</span>`;
+            if (records.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="8" style="text-align:center; color:var(--text-muted); padding:1.5rem;">此條件下無加班紀錄</td></tr>`;
+                return;
+            }
 
-                const ruleWarn = getOtRuleWarning(r.time, r.reason, r.name, r.is_special, r.date);
-                let timeDisplay = r.time || '-';
-                if (r.is_special) {
-                    timeDisplay += ` <span class="badge" style="background:rgba(99,102,241,0.2);color:#a5b4fc;border:1px solid rgba(99,102,241,0.4);margin-left:4px;" title="特殊狀況：${r.special_reason || ''}">★ 特殊狀況</span>`;
-                } else if (ruleWarn) {
-                    timeDisplay += ` <span class="badge" style="background:rgba(239,68,68,0.2);color:#fca5a5;border:1px solid rgba(239,68,68,0.4);margin-left:4px;cursor:pointer;" title="${ruleWarn.msg}">\u26a0\ufe0f ${ruleWarn.expected}</span>`;
-                }
+            // If grouping by week is enabled
+            if (isOtGroupedByWeek) {
+                // Group records by weekIndex
+                const grouped = {};
+                records.forEach(r => {
+                    const wInfo = getWeekInfoForDate(r.date, monthWeeks);
+                    const wIdx = wInfo ? wInfo.weekIndex : 0;
+                    if (!grouped[wIdx]) {
+                        grouped[wIdx] = {
+                            weekInfo: wInfo,
+                            records: [],
+                            totalHours: 0.0,
+                            weekdayHours: 0.0,
+                            weekendHours: 0.0
+                        };
+                    }
+                    grouped[wIdx].records.push(r);
+                    const h = parseFloat(r.hours || 0);
+                    grouped[wIdx].totalHours += h;
+                    if (r.note === '假日加班' || !!r.is_special) {
+                        grouped[wIdx].weekendHours += h;
+                    } else {
+                        grouped[wIdx].weekdayHours += h;
+                    }
+                });
 
-                const locBadge = `<span class="badge" style="background:rgba(148,163,184,0.15);color:#cbd5e1;border:1px solid rgba(148,163,184,0.3);">${r.location || '-'}</span>`;
+                // Render each week group in order
+                const sortedKeys = Object.keys(grouped).sort((a, b) => parseInt(a) - parseInt(b));
+                sortedKeys.forEach(wIdx => {
+                    const group = grouped[wIdx];
+                    const wInfo = group.weekInfo;
+                    const groupLabel = wInfo ? `第 ${wInfo.weekIndex} 週 (${wInfo.startDate} ~ ${wInfo.endDate})` : '其他日期';
 
-                tr.innerHTML = `
-                    <td>${r.date}</td>
-                    <td>${noteBadge}</td>
-                    <td><strong>${r.name}</strong></td>
-                    <td>${locBadge}</td>
-                    <td>${timeDisplay}</td>
-                    <td><span class="badge badge-ot">${r.hours} hr</span></td>
-                    <td>${r.reason || '-'}</td>
-                    <td>
-                        <div class="action-cell">
-                            <button class="action-btn" onclick="openOtEditModal(${r.id})"><i class="fa-solid fa-pen-to-square"></i> 編輯</button>
-                            <button class="action-btn delete" onclick="deleteOvertime(${r.id})"><i class="fa-solid fa-trash"></i></button>
-                        </div>
-                    </td>
-                `;
-                tbody.appendChild(tr);
-            });
+                    // Group Header Row
+                    const headerTr = document.createElement('tr');
+                    headerTr.className = 'week-group-header';
+                    headerTr.innerHTML = `
+                        <td colspan="8">
+                            <div class="week-group-title">
+                                <div class="week-group-left">
+                                    <i class="fa-regular fa-calendar-days" style="color:#818cf8;"></i>
+                                    <span>${groupLabel}</span>
+                                </div>
+                                <div class="week-group-stats">
+                                    <span class="stat-tag"><strong style="color:#fff;">${group.records.length}</strong> 筆加班</span>
+                                    <span class="stat-tag">小計 <strong style="color:#a5b4fc;">${group.totalHours.toFixed(1)} hr</strong> (平日 ${group.weekdayHours.toFixed(1)}h / 假日 ${group.weekendHours.toFixed(1)}h)</span>
+                                </div>
+                            </div>
+                        </td>
+                    `;
+                    tbody.appendChild(headerTr);
+
+                    // Render group records
+                    group.records.forEach(r => {
+                        const tr = document.createElement('tr');
+                        const isWe = r.note === '假日加班' || !!r.is_special;
+                        const noteBadge = isWe 
+                            ? `<span class="badge" style="background:rgba(245,158,11,0.2);color:#fcd34d;border:1px solid rgba(245,158,11,0.4)">假日加班</span>` 
+                            : `<span class="badge badge-ot">平日加班</span>`;
+
+                        const ruleWarn = getOtRuleWarning(r.time, r.reason, r.name, r.is_special, r.date);
+                        let timeDisplay = r.time || '-';
+                        if (r.is_special) {
+                            timeDisplay += ` <span class="badge" style="background:rgba(99,102,241,0.2);color:#a5b4fc;border:1px solid rgba(99,102,241,0.4);margin-left:4px;" title="特殊狀況：${r.special_reason || ''}">★ 特殊狀況</span>`;
+                        } else if (ruleWarn) {
+                            timeDisplay += ` <span class="badge" style="background:rgba(239,68,68,0.2);color:#fca5a5;border:1px solid rgba(239,68,68,0.4);margin-left:4px;cursor:pointer;" title="${ruleWarn.msg}">⚠️ ${ruleWarn.expected}</span>`;
+                        }
+
+                        const locBadge = `<span class="badge" style="background:rgba(148,163,184,0.15);color:#cbd5e1;border:1px solid rgba(148,163,184,0.3);">${r.location || '-'}</span>`;
+
+                        const weekdayStr = getChineseWeekday(r.date);
+                        const isDateWeekend = isWeekend(r.date);
+                        const dateTagClass = isDateWeekend ? 'weekday-tag weekend' : 'weekday-tag';
+                        const wBadge = wInfo ? `<span class="badge badge-week">第${wInfo.weekIndex}週</span>` : '';
+
+                        tr.innerHTML = `
+                            <td>${r.date} <span class="${dateTagClass}">${weekdayStr}</span>${wBadge}</td>
+                            <td>${noteBadge}</td>
+                            <td><strong>${r.name}</strong></td>
+                            <td>${locBadge}</td>
+                            <td>${timeDisplay}</td>
+                            <td><span class="badge badge-ot">${r.hours} hr</span></td>
+                            <td>${r.reason || '-'}</td>
+                            <td>
+                                <div class="action-cell">
+                                    <button class="action-btn" onclick="openOtEditModal(${r.id})"><i class="fa-solid fa-pen-to-square"></i> 編輯</button>
+                                    <button class="action-btn delete" onclick="deleteOvertime(${r.id})"><i class="fa-solid fa-trash"></i></button>
+                                </div>
+                            </td>
+                        `;
+                        tbody.appendChild(tr);
+                    });
+                });
+            } else {
+                // Flat List view
+                records.forEach(r => {
+                    const tr = document.createElement('tr');
+                    const isWe = r.note === '假日加班' || !!r.is_special;
+                    const noteBadge = isWe 
+                        ? `<span class="badge" style="background:rgba(245,158,11,0.2);color:#fcd34d;border:1px solid rgba(245,158,11,0.4)">假日加班</span>` 
+                        : `<span class="badge badge-ot">平日加班</span>`;
+
+                    const ruleWarn = getOtRuleWarning(r.time, r.reason, r.name, r.is_special, r.date);
+                    let timeDisplay = r.time || '-';
+                    if (r.is_special) {
+                        timeDisplay += ` <span class="badge" style="background:rgba(99,102,241,0.2);color:#a5b4fc;border:1px solid rgba(99,102,241,0.4);margin-left:4px;" title="特殊狀況：${r.special_reason || ''}">★ 特殊狀況</span>`;
+                    } else if (ruleWarn) {
+                        timeDisplay += ` <span class="badge" style="background:rgba(239,68,68,0.2);color:#fca5a5;border:1px solid rgba(239,68,68,0.4);margin-left:4px;cursor:pointer;" title="${ruleWarn.msg}">⚠️ ${ruleWarn.expected}</span>`;
+                    }
+
+                    const locBadge = `<span class="badge" style="background:rgba(148,163,184,0.15);color:#cbd5e1;border:1px solid rgba(148,163,184,0.3);">${r.location || '-'}</span>`;
+
+                    const wInfo = getWeekInfoForDate(r.date, monthWeeks);
+                    const weekdayStr = getChineseWeekday(r.date);
+                    const isDateWeekend = isWeekend(r.date);
+                    const dateTagClass = isDateWeekend ? 'weekday-tag weekend' : 'weekday-tag';
+                    const wBadge = wInfo ? `<span class="badge badge-week">第${wInfo.weekIndex}週</span>` : '';
+
+                    tr.innerHTML = `
+                        <td>${r.date} <span class="${dateTagClass}">${weekdayStr}</span>${wBadge}</td>
+                        <td>${noteBadge}</td>
+                        <td><strong>${r.name}</strong></td>
+                        <td>${locBadge}</td>
+                        <td>${timeDisplay}</td>
+                        <td><span class="badge badge-ot">${r.hours} hr</span></td>
+                        <td>${r.reason || '-'}</td>
+                        <td>
+                            <div class="action-cell">
+                                <button class="action-btn" onclick="openOtEditModal(${r.id})"><i class="fa-solid fa-pen-to-square"></i> 編輯</button>
+                                <button class="action-btn delete" onclick="deleteOvertime(${r.id})"><i class="fa-solid fa-trash"></i></button>
+                            </div>
+                        </td>
+                    `;
+                    tbody.appendChild(tr);
+                });
+            }
         }
 
         // Delete Overtime
@@ -1783,53 +2270,170 @@
         // Load Leaves
         async function loadLeaves() {
             const month = document.getElementById('monthSelect').value;
+            const parts = month.split('/');
+            const yearNum = parseInt(parts[0], 10);
+            const monthNum = parseInt(parts[1], 10);
+            const monthWeeks = getWeeksInMonth(yearNum, monthNum);
+
             const search = document.getElementById('leaveSearch').value;
             const leaveType = document.getElementById('leaveTypeFilter').value;
-            const res = await fetch(`/api/leaves?month=${encodeURIComponent(month)}&search=${encodeURIComponent(search)}&leave_types=${encodeURIComponent(leaveType)}`);
+            const weekFilter = document.getElementById('leaveWeekFilter') ? document.getElementById('leaveWeekFilter').value : 'all';
+
+            let queryUrl = `/api/leaves?month=${encodeURIComponent(month)}&search=${encodeURIComponent(search)}&leave_types=${encodeURIComponent(leaveType)}`;
+            if (weekFilter && weekFilter !== 'all') {
+                const w = monthWeeks.find(x => String(x.weekIndex) === String(weekFilter));
+                if (w) {
+                    queryUrl = `/api/leaves?start_date=${encodeURIComponent(w.startDate)}&end_date=${encodeURIComponent(w.endDate)}&search=${encodeURIComponent(search)}&leave_types=${encodeURIComponent(leaveType)}`;
+                }
+            }
+
+            const res = await fetch(queryUrl);
             const records = await res.json();
 
             const tbody = document.getElementById('leavesTableBody');
             tbody.innerHTML = '';
 
-            records.forEach(r => {
-                const tr = document.createElement('tr');
-                const badgeClass = getLeaveBadgeClass(r.leave_type);
-                const isCompLeave = (r.leave_type === '黑假' || r.leave_type === 'WFH');
-                let statusControlHtml = '<span style="color:var(--text-muted);font-size:0.83rem;">-</span>';
-                
-                if (isCompLeave) {
-                    const isDed = (r.is_comp_deducted === undefined || r.is_comp_deducted === null) ? 1 : (r.is_comp_deducted ? 1 : 0);
-                    const bgStyle = isDed === 1 
-                        ? 'background:rgba(56,189,248,0.15);color:#38bdf8;border:1px solid rgba(56,189,248,0.4);' 
-                        : 'background:rgba(245,158,11,0.18);color:#fcd34d;border:1px solid rgba(245,158,11,0.4);';
+            if (records.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="8" style="text-align:center; color:var(--text-muted); padding:1.5rem;">此條件下無請假紀錄</td></tr>`;
+                return;
+            }
 
-                    statusControlHtml = `
-                        <select onchange="changeDeductedStatus(${r.id}, this)" 
-                                style="${bgStyle} font-weight: 600; font-size: 0.78rem; padding: 2px 6px; height: 26px; border-radius: 5px; cursor: pointer; outline: none; transition: all 0.15s ease;"
-                                title="選擇扣除狀態">
-                            <option value="1" ${isDed === 1 ? 'selected' : ''} style="background:#1e293b;color:#38bdf8;">✓ 已扣補休</option>
-                            <option value="0" ${isDed === 0 ? 'selected' : ''} style="background:#1e293b;color:#fcd34d;">⏳ 還沒扣</option>
-                        </select>
+            if (isLeaveGroupedByWeek) {
+                // Group records by week
+                const grouped = {};
+                records.forEach(r => {
+                    const wInfo = getWeekInfoForDate(r.date, monthWeeks);
+                    const wIdx = wInfo ? wInfo.weekIndex : 0;
+                    if (!grouped[wIdx]) {
+                        grouped[wIdx] = {
+                            weekInfo: wInfo,
+                            records: [],
+                            compDaysTotal: 0.0
+                        };
+                    }
+                    grouped[wIdx].records.push(r);
+                    grouped[wIdx].compDaysTotal += parseFloat(r.google_comp_days || 0);
+                });
+
+                const sortedKeys = Object.keys(grouped).sort((a, b) => parseInt(a) - parseInt(b));
+                sortedKeys.forEach(wIdx => {
+                    const group = grouped[wIdx];
+                    const wInfo = group.weekInfo;
+                    const groupLabel = wInfo ? `第 ${wInfo.weekIndex} 週 (${wInfo.startDate} ~ ${wInfo.endDate})` : '其他日期';
+
+                    // Group Header Row
+                    const headerTr = document.createElement('tr');
+                    headerTr.className = 'week-group-header';
+                    headerTr.innerHTML = `
+                        <td colspan="8">
+                            <div class="week-group-title">
+                                <div class="week-group-left">
+                                    <i class="fa-regular fa-calendar-days" style="color:#38bdf8;"></i>
+                                    <span>${groupLabel}</span>
+                                </div>
+                                <div class="week-group-stats">
+                                    <span class="stat-tag"><strong style="color:#fff;">${group.records.length}</strong> 筆請假</span>
+                                    <span class="stat-tag">扣補休小計 <strong style="color:#38bdf8;">${group.compDaysTotal.toFixed(1)} 天</strong></span>
+                                </div>
+                            </div>
+                        </td>
                     `;
-                }
+                    tbody.appendChild(headerTr);
 
-                tr.innerHTML = `
-                    <td>${r.date}</td>
-                    <td><strong>${r.name}</strong></td>
-                    <td><span class="badge ${badgeClass}">${r.leave_type}</span></td>
-                    <td>${r.duration}</td>
-                    <td>${r.google_comp_days > 0 ? `${r.google_comp_days} 天` : '-'}</td>
-                    <td>${r.reason || '-'}</td>
-                    <td>${statusControlHtml}</td>
-                    <td>
-                        <div class="action-cell">
-                            <button class="action-btn" onclick="openLeaveEditModal(${r.id})"><i class="fa-solid fa-pen-to-square"></i> 編輯</button>
-                            <button class="action-btn delete" onclick="deleteLeave(${r.id})"><i class="fa-solid fa-trash"></i></button>
-                        </div>
-                    </td>
-                `;
-                tbody.appendChild(tr);
-            });
+                    // Render records
+                    group.records.forEach(r => {
+                        const tr = document.createElement('tr');
+                        const badgeClass = getLeaveBadgeClass(r.leave_type);
+                        const isCompLeave = (r.leave_type === '黑假' || r.leave_type === 'WFH');
+                        let statusControlHtml = '<span style="color:var(--text-muted);font-size:0.83rem;">-</span>';
+                        
+                        if (isCompLeave) {
+                            const isDed = (r.is_comp_deducted === undefined || r.is_comp_deducted === null) ? 1 : (r.is_comp_deducted ? 1 : 0);
+                            const bgStyle = isDed === 1 
+                                ? 'background:rgba(56,189,248,0.15);color:#38bdf8;border:1px solid rgba(56,189,248,0.4);' 
+                                : 'background:rgba(245,158,11,0.18);color:#fcd34d;border:1px solid rgba(245,158,11,0.4);';
+
+                            statusControlHtml = `
+                                <select onchange="changeDeductedStatus(${r.id}, this)" 
+                                        style="${bgStyle} font-weight: 600; font-size: 0.78rem; padding: 2px 6px; height: 26px; border-radius: 5px; cursor: pointer; outline: none; transition: all 0.15s ease;"
+                                        title="選擇扣除狀態">
+                                    <option value="1" ${isDed === 1 ? 'selected' : ''} style="background:#1e293b;color:#38bdf8;">✓ 已扣補休</option>
+                                    <option value="0" ${isDed === 0 ? 'selected' : ''} style="background:#1e293b;color:#fcd34d;">⏳ 還沒扣</option>
+                                </select>
+                            `;
+                        }
+
+                        const weekdayStr = getChineseWeekday(r.date);
+                        const isDateWeekend = isWeekend(r.date);
+                        const dateTagClass = isDateWeekend ? 'weekday-tag weekend' : 'weekday-tag';
+                        const wBadge = wInfo ? `<span class="badge badge-week" style="background:rgba(6,182,212,0.15);color:#67e8f9;border-color:rgba(6,182,212,0.35);">第${wInfo.weekIndex}週</span>` : '';
+
+                        tr.innerHTML = `
+                            <td>${r.date} <span class="${dateTagClass}">${weekdayStr}</span>${wBadge}</td>
+                            <td><strong>${r.name}</strong></td>
+                            <td><span class="badge ${badgeClass}">${r.leave_type}</span></td>
+                            <td>${r.duration}</td>
+                            <td>${r.google_comp_days > 0 ? `${r.google_comp_days} 天` : '-'}</td>
+                            <td>${r.reason || '-'}</td>
+                            <td>${statusControlHtml}</td>
+                            <td>
+                                <div class="action-cell">
+                                    <button class="action-btn" onclick="openLeaveEditModal(${r.id})"><i class="fa-solid fa-pen-to-square"></i> 編輯</button>
+                                    <button class="action-btn delete" onclick="deleteLeave(${r.id})"><i class="fa-solid fa-trash"></i></button>
+                                </div>
+                            </td>
+                        `;
+                        tbody.appendChild(tr);
+                    });
+                });
+            } else {
+                // Flat list view
+                records.forEach(r => {
+                    const tr = document.createElement('tr');
+                    const badgeClass = getLeaveBadgeClass(r.leave_type);
+                    const isCompLeave = (r.leave_type === '黑假' || r.leave_type === 'WFH');
+                    let statusControlHtml = '<span style="color:var(--text-muted);font-size:0.83rem;">-</span>';
+                    
+                    if (isCompLeave) {
+                        const isDed = (r.is_comp_deducted === undefined || r.is_comp_deducted === null) ? 1 : (r.is_comp_deducted ? 1 : 0);
+                        const bgStyle = isDed === 1 
+                            ? 'background:rgba(56,189,248,0.15);color:#38bdf8;border:1px solid rgba(56,189,248,0.4);' 
+                            : 'background:rgba(245,158,11,0.18);color:#fcd34d;border:1px solid rgba(245,158,11,0.4);';
+
+                        statusControlHtml = `
+                            <select onchange="changeDeductedStatus(${r.id}, this)" 
+                                    style="${bgStyle} font-weight: 600; font-size: 0.78rem; padding: 2px 6px; height: 26px; border-radius: 5px; cursor: pointer; outline: none; transition: all 0.15s ease;"
+                                    title="選擇扣除狀態">
+                                <option value="1" ${isDed === 1 ? 'selected' : ''} style="background:#1e293b;color:#38bdf8;">✓ 已扣補休</option>
+                                <option value="0" ${isDed === 0 ? 'selected' : ''} style="background:#1e293b;color:#fcd34d;">⏳ 還沒扣</option>
+                            </select>
+                        `;
+                    }
+
+                    const wInfo = getWeekInfoForDate(r.date, monthWeeks);
+                    const weekdayStr = getChineseWeekday(r.date);
+                    const isDateWeekend = isWeekend(r.date);
+                    const dateTagClass = isDateWeekend ? 'weekday-tag weekend' : 'weekday-tag';
+                    const wBadge = wInfo ? `<span class="badge badge-week" style="background:rgba(6,182,212,0.15);color:#67e8f9;border-color:rgba(6,182,212,0.35);">第${wInfo.weekIndex}週</span>` : '';
+
+                    tr.innerHTML = `
+                        <td>${r.date} <span class="${dateTagClass}">${weekdayStr}</span>${wBadge}</td>
+                        <td><strong>${r.name}</strong></td>
+                        <td><span class="badge ${badgeClass}">${r.leave_type}</span></td>
+                        <td>${r.duration}</td>
+                        <td>${r.google_comp_days > 0 ? `${r.google_comp_days} 天` : '-'}</td>
+                        <td>${r.reason || '-'}</td>
+                        <td>${statusControlHtml}</td>
+                        <td>
+                            <div class="action-cell">
+                                <button class="action-btn" onclick="openLeaveEditModal(${r.id})"><i class="fa-solid fa-pen-to-square"></i> 編輯</button>
+                                <button class="action-btn delete" onclick="deleteLeave(${r.id})"><i class="fa-solid fa-trash"></i></button>
+                            </div>
+                        </td>
+                    `;
+                    tbody.appendChild(tr);
+                });
+            }
         }
 
         // Change Deducted Status with Optimistic UI Update (Zero Latency)

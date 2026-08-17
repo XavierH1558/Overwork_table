@@ -593,13 +593,18 @@ def get_date_search_patterns(search_str):
     return patterns, digits_only
 
 
-def get_overtime_records(month=None, name=None, search=None, ot_type=None):
+def get_overtime_records(month=None, name=None, search=None, ot_type=None, start_date=None, end_date=None):
     with get_connection() as conn:
         cursor = conn.cursor()
         query = "SELECT * FROM overtime_records WHERE 1=1"
         params = []
         
-        if month:
+        if start_date and end_date:
+            s_d = normalize_date_fmt(start_date)
+            e_d = normalize_date_fmt(end_date)
+            query += " AND date >= ? AND date <= ?"
+            params.extend([s_d, e_d])
+        elif month:
             # month format 'YYYY/MM'
             m_clean = month.replace("-", "/")
             parts = m_clean.split('/')
@@ -707,13 +712,18 @@ def get_asw_export_data(month=None):
     return title, rows, round(total_hours, 2)
 
 
-def get_leave_records(month=None, name=None, leave_types=None, search=None):
+def get_leave_records(month=None, name=None, leave_types=None, search=None, start_date=None, end_date=None):
     with get_connection() as conn:
         cursor = conn.cursor()
         query = "SELECT * FROM leave_records WHERE 1=1"
         params = []
         
-        if month:
+        if start_date and end_date:
+            s_d = normalize_date_fmt(start_date)
+            e_d = normalize_date_fmt(end_date)
+            query += " AND date >= ? AND date <= ?"
+            params.extend([s_d, e_d])
+        elif month:
             m_clean = month.replace("-", "/")
             parts = m_clean.split('/')
             if len(parts) == 2:
@@ -757,6 +767,51 @@ def get_leave_records(month=None, name=None, leave_types=None, search=None):
         cursor.execute(query, params)
         rows = cursor.fetchall()
         return [dict(r) for r in rows]
+
+
+def get_weeks_of_month(year, month):
+    """
+    Returns list of weeks for the month (Monday to Sunday cycle):
+    Week 1: 1st of month to first Sunday
+    Week 2: Next Monday to next Sunday
+    ...
+    Week N: Last Monday to last day of month
+    """
+    import calendar
+    from datetime import date
+    
+    num_days = calendar.monthrange(year, month)[1]
+    weeks = []
+    
+    cur_day = 1
+    w_idx = 1
+    while cur_day <= num_days:
+        s_date = date(year, month, cur_day)
+        # Weekday: 0 is Monday, 6 is Sunday
+        # Find the Sunday of this week, or the last day of the month, whichever is earlier
+        days_until_sunday = 6 - s_date.weekday()
+        end_day = min(cur_day + days_until_sunday, num_days)
+        
+        s_str = f"{year:04d}/{month:02d}/{cur_day:02d}"
+        e_str = f"{year:04d}/{month:02d}/{end_day:02d}"
+        range_short = f"{month:02d}/{cur_day:02d} ~ {month:02d}/{end_day:02d}"
+        label = f"第 {w_idx} 週 ({range_short})"
+        
+        weeks.append({
+            "week_index": w_idx,
+            "start_date": s_str,
+            "end_date": e_str,
+            "range_text": range_short,
+            "label": label
+        })
+        
+        cur_day = end_day + 1
+        w_idx += 1
+        
+    return weeks
+
+
+
 
 
 def update_overtime_record(rec_id, date, name, time_str, hours, reason, note, eval_hours, is_special=0, special_reason=''):
@@ -813,19 +868,46 @@ def delete_leave_record(rec_id):
         conn.commit()
 
 
-def get_monthly_stats(month=None):
+def get_monthly_stats(month=None, start_date=None, end_date=None):
     """
     Returns monthly summary matching image 2 style:
     - Overtime hours per person & Team Total
     - Leave breakdown per person (病假, 事假, 黑假, WFH, 因公外出, Google補休天數)
+    - Weekly summary breakdown for each Monday~Sunday week in the month
     """
     with get_connection() as conn:
         cursor = conn.cursor()
         
-        # Build month clause
+        # Determine Year and Month for weekly summary computation
+        if month:
+            parts = month.replace("-", "/").split('/')
+            try:
+                base_year = int(parts[0])
+                base_month = int(parts[1])
+            except Exception:
+                base_year = datetime.now().year
+                base_month = datetime.now().month
+        elif start_date:
+            parts = start_date.replace("-", "/").split('/')
+            try:
+                base_year = int(parts[0])
+                base_month = int(parts[1])
+            except Exception:
+                base_year = datetime.now().year
+                base_month = datetime.now().month
+        else:
+            base_year = datetime.now().year
+            base_month = datetime.now().month
+
+        # Build date clause
         m_clause = ""
         m_params = []
-        if month:
+        if start_date and end_date:
+            s_d = normalize_date_fmt(start_date)
+            e_d = normalize_date_fmt(end_date)
+            m_clause = " AND date >= ? AND date <= ?"
+            m_params = [s_d, e_d]
+        elif month:
             m_clean = month.replace("-", "/")
             parts = m_clean.split('/')
             if len(parts) == 2:
@@ -1042,11 +1124,61 @@ def get_monthly_stats(month=None):
                 "google_comp_pending_details": pending_records
             })
 
+        # Compute weekly summary breakdown for the month
+        weeks = get_weeks_of_month(base_year, base_month)
+        weekly_summary = []
+        for w in weeks:
+            w_start = w['start_date']
+            w_end = w['end_date']
+            
+            cursor.execute("""
+                SELECT hours, note, is_special 
+                FROM overtime_records 
+                WHERE date >= ? AND date <= ?
+            """, (w_start, w_end))
+            w_ot_rows = cursor.fetchall()
+            
+            w_ot_hours = 0.0
+            w_wd_hours = 0.0
+            w_we_hours = 0.0
+            for r in w_ot_rows:
+                h = float(r['hours'] or 0.0)
+                w_ot_hours += h
+                if bool(r['is_special']) or r['note'] == '假日加班':
+                    w_we_hours += h
+                else:
+                    w_wd_hours += h
+                    
+            cursor.execute("""
+                SELECT google_comp_days, leave_type
+                FROM leave_records
+                WHERE date >= ? AND date <= ?
+            """, (w_start, w_end))
+            w_lv_rows = cursor.fetchall()
+            
+            w_lv_count = len(w_lv_rows)
+            w_comp_used = sum(float(r['google_comp_days'] or 0.0) for r in w_lv_rows)
+            
+            weekly_summary.append({
+                "week_index": w['week_index'],
+                "label": w['label'],
+                "range_text": w['range_text'],
+                "start_date": w_start,
+                "end_date": w_end,
+                "ot_hours": round(w_ot_hours, 2),
+                "weekday_ot_hours": round(w_wd_hours, 2),
+                "weekend_ot_hours": round(w_we_hours, 2),
+                "ot_count": len(w_ot_rows),
+                "leave_count": w_lv_count,
+                "comp_days_used": round(w_comp_used, 2)
+            })
+
         return {
             "stats": stats_list,
             "team_total_hours": round(team_total_hours, 2),
             "team_weekday_hours": round(team_weekday_hours, 2),
             "team_weekend_hours": round(team_weekend_hours, 2),
             "team_est_comp_hours": team_est_comp_hours,
-            "team_est_comp_days": team_est_comp_days
+            "team_est_comp_days": team_est_comp_days,
+            "weekly_summary": weekly_summary
         }

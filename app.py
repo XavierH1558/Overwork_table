@@ -184,7 +184,9 @@ def get_overtime():
     name = request.args.get('name')
     ot_type = request.args.get('ot_type')
     search = request.args.get('search')
-    records = database.get_overtime_records(month=month, name=name, search=search, ot_type=ot_type)
+    start_date = request.args.get('start_date')
+    end_date = request.args.get('end_date')
+    records = database.get_overtime_records(month=month, name=name, search=search, ot_type=ot_type, start_date=start_date, end_date=end_date)
     for r in records:
         r['location'] = database.get_member_location_at_date(r['name'], r['date'])
     return jsonify(records)
@@ -288,9 +290,11 @@ def get_leaves():
     name = request.args.get('name')
     leave_types_str = request.args.get('leave_types')
     search = request.args.get('search')
+    start_date = request.args.get('start_date')
+    end_date = request.args.get('end_date')
     
     leave_types = leave_types_str.split(',') if leave_types_str else None
-    records = database.get_leave_records(month=month, name=name, leave_types=leave_types, search=search)
+    records = database.get_leave_records(month=month, name=name, leave_types=leave_types, search=search, start_date=start_date, end_date=end_date)
     return jsonify(records)
 
 @app.route('/api/leaves/<int:rec_id>', methods=['GET'])
@@ -354,7 +358,9 @@ def delete_leave(rec_id):
 @app.route('/api/stats', methods=['GET'])
 def get_stats():
     month = request.args.get('month')
-    stats = database.get_monthly_stats(month=month)
+    start_date = request.args.get('start_date')
+    end_date = request.args.get('end_date')
+    stats = database.get_monthly_stats(month=month, start_date=start_date, end_date=end_date)
     return jsonify(stats)
 
 @app.route('/api/export', methods=['GET'])
