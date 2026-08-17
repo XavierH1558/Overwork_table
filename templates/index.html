@@ -515,6 +515,16 @@
             pointer-events: auto;
         }
 
+        /* Week Filter Select Dropdowns */
+        .week-filter-select {
+            min-width: 220px;
+            width: auto;
+            cursor: pointer;
+            text-overflow: clip;
+            white-space: nowrap;
+            padding-right: 1.8rem;
+        }
+
         /* Top Nano Progress Bar */
         .top-progress-bar {
             position: fixed;
@@ -894,7 +904,7 @@
                         <label style="font-size:0.85rem; color:var(--text-muted); display:flex; align-items:center; gap:0.35rem;">
                             <i class="fa-regular fa-calendar-days" style="color:#818cf8;"></i> 週次篩選：
                         </label>
-                        <select id="dashWeekSelect" onchange="onDashWeekChange(this.value)" style="width: 180px;">
+                        <select id="dashWeekSelect" class="week-filter-select" onchange="onDashWeekChange(this.value)">
                             <option value="all">全部週次 (全月統計)</option>
                         </select>
                         <button class="btn btn-secondary" id="btnDashActiveOnly" onclick="toggleDashActiveOnly()" style="border-color: rgba(99,102,241,0.4); color: #a5b4fc;" title="切換是否僅顯示該週有加班或請假活動的成員">
@@ -942,10 +952,10 @@
                         <i class="fa-solid fa-clock" style="color: #818cf8;"></i> 加班紀錄清單
                     </div>
                     <div class="filter-bar">
-                        <select id="otWeekFilter" onchange="loadOvertime()" style="width: 175px;">
+                        <select id="otWeekFilter" class="week-filter-select" onchange="loadOvertime()">
                             <option value="all">全部週次 (全月)</option>
                         </select>
-                        <select id="otTypeFilter" onchange="loadOvertime()" style="width: 125px;">
+                        <select id="otTypeFilter" onchange="loadOvertime()" style="min-width: 125px; width: auto;">
                             <option value="">全部類型</option>
                             <option value="平日加班">平日加班</option>
                             <option value="假日加班">假日加班</option>
@@ -997,10 +1007,10 @@
                         <i class="fa-solid fa-calendar-xmark" style="color: #38bdf8;"></i> 請假紀錄清單
                     </div>
                     <div class="filter-bar">
-                        <select id="leaveWeekFilter" onchange="loadLeaves()" style="width: 175px;">
+                        <select id="leaveWeekFilter" class="week-filter-select" onchange="loadLeaves()">
                             <option value="all">全部週次 (全月)</option>
                         </select>
-                        <select id="leaveTypeFilter" onchange="loadLeaves()" style="width: 125px;">
+                        <select id="leaveTypeFilter" onchange="loadLeaves()" style="min-width: 125px; width: auto;">
                             <option value="">全部假別</option>
                             <option value="黑假">黑假</option>
                             <option value="WFH">WFH</option>
