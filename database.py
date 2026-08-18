@@ -96,6 +96,34 @@ class LibsqlConnWrapper:
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.close()
 
+class SqliteConnWrapper:
+    def __init__(self, path):
+        self.conn = sqlite3.connect(path)
+        self.conn.row_factory = sqlite3.Row
+
+    def cursor(self):
+        return self.conn.cursor()
+
+    def commit(self):
+        self.conn.commit()
+
+    def close(self):
+        try:
+            self.conn.close()
+        except Exception:
+            pass
+
+    def __enter__(self):
+        return self.conn
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        if exc_type is None:
+            try:
+                self.conn.commit()
+            except Exception:
+                pass
+        self.close()
+
 def get_connection():
     if TURSO_DATABASE_URL and TURSO_AUTH_TOKEN:
         try:
@@ -109,9 +137,7 @@ def get_connection():
             except Exception as e2:
                 print(f"[Database] Failed to connect to Turso: {e1} / {e2}, falling back to local SQLite.")
     
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    return conn
+    return SqliteConnWrapper(DB_PATH)
 
 def init_db():
     with get_connection() as conn:
@@ -329,10 +355,26 @@ def update_member_location_history(history_id, name, start_date, end_date, locat
         conn.commit()
 
 
-def get_member_location_at_date(name, date_str):
+def get_member_location_at_date(name, date_str, location_histories=None, default_locations=None):
     if not name or not date_str:
         return '台灣辦公室'
     d_clean = normalize_date_fmt(date_str)
+    name_lower = name.strip().lower()
+
+    if location_histories is not None:
+        matching = []
+        for h in location_histories:
+            if h.get('name', '').strip().lower() == name_lower:
+                h_start = normalize_date_fmt(h.get('start_date', ''))
+                h_end = normalize_date_fmt(h.get('end_date') or '')
+                if h_start <= d_clean and (not h_end or h_end >= d_clean):
+                    matching.append(h)
+        if matching:
+            matching.sort(key=lambda x: (normalize_date_fmt(x.get('start_date', '')), x.get('id', 0)), reverse=True)
+            return matching[0].get('location', '台灣辦公室')
+        if default_locations is not None:
+            return default_locations.get(name_lower, '台灣辦公室')
+
     with get_connection() as conn:
         cursor = conn.cursor()
         # Check history table for matching date range
@@ -920,6 +962,7 @@ def get_monthly_stats(month=None, start_date=None, end_date=None):
     - Overtime hours per person & Team Total
     - Leave breakdown per person (病假, 事假, 黑假, WFH, 因公外出, Google補休天數)
     - Weekly summary breakdown for each Monday~Sunday week in the month
+    Optimized: All records are fetched in a single batch, eliminating N+1 query lag!
     """
     with get_connection() as conn:
         cursor = conn.cursor()
@@ -965,275 +1008,284 @@ def get_monthly_stats(month=None, start_date=None, end_date=None):
                 m_clause = " AND date LIKE ?"
                 m_params = [f"{m_clean}%"]
 
-        # 1. Get list of active team members plus any members who have records in this period
-        db_members = get_all_members()
-        member_name_list = [m['name'].strip() for m in db_members if m.get('name') and m['name'].strip()]
+        # Batch 1: Load all members
+        cursor.execute("SELECT id, name, COALESCE(location, '台灣辦公室') as location, COALESCE(google_comp_quota, 0.0) as google_comp_quota FROM team_members ORDER BY name ASC")
+        db_members = cursor.fetchall()
+        default_locations = {}
+        member_quota_map = {}
+        member_name_list = []
+        for m in db_members:
+            m_name = m['name'].strip()
+            if m_name:
+                member_name_list.append(m_name)
+                default_locations[m_name.lower()] = m['location']
+                member_quota_map[m_name.lower()] = float(m['google_comp_quota'] or 0.0)
 
-        query_record_names = f'''
-            SELECT DISTINCT TRIM(name) FROM (
-                SELECT name FROM overtime_records WHERE 1=1 {m_clause}
-                UNION
-                SELECT name FROM leave_records WHERE 1=1 {m_clause}
-            ) WHERE name IS NOT NULL AND TRIM(name) != ''
-        '''
-        cursor.execute(query_record_names, m_params + m_params)
-        rec_names = [r[0] for r in cursor.fetchall() if r[0]]
+        # Batch 2: Load all location histories
+        cursor.execute("SELECT id, name, start_date, end_date, location FROM member_location_history ORDER BY start_date DESC, id DESC")
+        location_histories = [dict(r) for r in cursor.fetchall()]
 
-        combined_names = []
-        seen_names = set()
-        for n in member_name_list + rec_names:
-            if n.lower() not in seen_names:
-                seen_names.add(n.lower())
-                combined_names.append(n)
-        names = combined_names
+        # Batch 3: Load all overtime records in date filter
+        cursor.execute(f"SELECT id, date, name, hours, note, is_special, special_reason, reason FROM overtime_records WHERE 1=1 {m_clause}", m_params)
+        all_ot_rows = [dict(r) for r in cursor.fetchall()]
 
-        stats_list = []
-        team_total_hours = 0.0
-        team_weekday_hours = 0.0
-        team_weekend_hours = 0.0
-        team_est_comp_hours = 0.0
-        team_est_comp_days = 0.0
-        
-        for name in names:
-            # Overtime breakdown: query all overtime records for this member
-            ot_query = f"SELECT date, hours, note, is_special, special_reason, reason FROM overtime_records WHERE LOWER(TRIM(name)) = LOWER(TRIM(?)){m_clause}"
-            ot_params = [name] + m_params
-            cursor.execute(ot_query, ot_params)
-            ot_rows = cursor.fetchall()
+        # Batch 4: Load all leave records in date filter
+        cursor.execute(f"SELECT id, date, name, leave_type, duration, google_comp_days, COALESCE(is_comp_deducted, 1) as is_comp_deducted, reason FROM leave_records WHERE 1=1 {m_clause}", m_params)
+        all_lv_rows = [dict(r) for r in cursor.fetchall()]
+
+        # Batch 5: Load all historical comp leave records for quota calculation
+        cursor.execute("SELECT date, name, leave_type, duration, google_comp_days, COALESCE(is_comp_deducted, 1) as is_comp_deducted, reason FROM leave_records WHERE COALESCE(google_comp_days, 0) > 0 ORDER BY date ASC")
+        all_comp_rows = [dict(r) for r in cursor.fetchall()]
+
+    # Group records by member name (case-insensitive)
+    ot_by_name = {}
+    for r in all_ot_rows:
+        n_key = (r.get('name') or '').strip().lower()
+        if n_key:
+            ot_by_name.setdefault(n_key, []).append(r)
+
+    lv_by_name = {}
+    for r in all_lv_rows:
+        n_key = (r.get('name') or '').strip().lower()
+        if n_key:
+            lv_by_name.setdefault(n_key, []).append(r)
+
+    comp_by_name = {}
+    for r in all_comp_rows:
+        n_key = (r.get('name') or '').strip().lower()
+        if n_key:
+            comp_by_name.setdefault(n_key, []).append(r)
+
+    # Collect distinct names
+    combined_names = []
+    seen_names = set()
+    all_raw_names = member_name_list + [r['name'].strip() for r in all_ot_rows if r.get('name')] + [r['name'].strip() for r in all_lv_rows if r.get('name')]
+    for n in all_raw_names:
+        if n and n.lower() not in seen_names:
+            seen_names.add(n.lower())
+            combined_names.append(n)
+    names = combined_names
+
+    stats_list = []
+    team_total_hours = 0.0
+    team_weekday_hours = 0.0
+    team_weekend_hours = 0.0
+    team_est_comp_hours = 0.0
+    team_est_comp_days = 0.0
+
+    fallback_loc_date = f"{month or '2026/07'}/15"
+
+    for name in names:
+        n_key = name.strip().lower()
+        ot_rows = ot_by_name.get(n_key, [])
+        ot_count = len(ot_rows)
+        weekday_ot_hours = 0.0
+        weekend_ot_hours = 0.0
+        special_ot_count = 0
+        special_reasons_list = []
+        location_ot_summary = {}
+
+        for r in ot_rows:
+            h = float(r.get('hours') or 0.0)
+            is_sp = bool(r.get('is_special'))
+            sp_reason = (r.get('special_reason') or '').strip()
+            gen_reason = (r.get('reason') or '').strip()
+            note = r.get('note') or ''
+            r_date = r.get('date') or ''
             
-            ot_count = len(ot_rows)
-            weekday_ot_hours = 0.0
-            weekend_ot_hours = 0.0
-            special_ot_count = 0
-            special_reasons_list = []
-            
-            location_ot_summary = {}
-
-            for r in ot_rows:
-                h = float(r['hours'] or 0.0)
-                is_sp = bool(r['is_special'])
-                sp_reason = (r['special_reason'] or '').strip()
-                gen_reason = (r['reason'] or '').strip()
-                note = r['note'] or ''
-                r_date = r['date']
-                
-                loc = get_member_location_at_date(name, r_date)
-                if loc not in location_ot_summary:
-                    location_ot_summary[loc] = {
-                        "ot_count": 0,
-                        "weekday_hours": 0.0,
-                        "weekend_hours": 0.0,
-                        "total_hours": 0.0
-                    }
-                location_ot_summary[loc]["ot_count"] += 1
-                location_ot_summary[loc]["total_hours"] += h
-
-                if is_sp or note == '假日加班':
-                    weekend_ot_hours += h
-                    location_ot_summary[loc]["weekend_hours"] += h
-                    if is_sp:
-                        special_ot_count += 1
-                        special_reasons_list.append(sp_reason or gen_reason or '特殊狀況')
-                else:
-                    weekday_ot_hours += h
-                    location_ot_summary[loc]["weekday_hours"] += h
-
-            ot_hours = weekday_ot_hours + weekend_ot_hours
-            team_total_hours += ot_hours
-            team_weekday_hours += weekday_ot_hours
-            team_weekend_hours += weekend_ot_hours
-
-            # If no overtime records, query default location for member in that month
-            if not location_ot_summary:
-                curr_loc = get_member_location_at_date(name, f"{month or '2026/07'}/15")
-                location_ot_summary[curr_loc] = {
+            loc = get_member_location_at_date(name, r_date, location_histories=location_histories, default_locations=default_locations)
+            if loc not in location_ot_summary:
+                location_ot_summary[loc] = {
                     "ot_count": 0,
                     "weekday_hours": 0.0,
                     "weekend_hours": 0.0,
                     "total_hours": 0.0
                 }
+            location_ot_summary[loc]["ot_count"] += 1
+            location_ot_summary[loc]["total_hours"] += h
 
-            location_breakdown = []
-            for loc_name, loc_data in location_ot_summary.items():
-                location_breakdown.append({
-                    "location": loc_name,
-                    "ot_count": loc_data["ot_count"],
-                    "weekday_hours": round(loc_data["weekday_hours"], 2),
-                    "weekend_hours": round(loc_data["weekend_hours"], 2),
-                    "total_hours": round(loc_data["total_hours"], 2)
-                })
+            if is_sp or note == '假日加班':
+                weekend_ot_hours += h
+                location_ot_summary[loc]["weekend_hours"] += h
+                if is_sp:
+                    special_ot_count += 1
+                    special_reasons_list.append(sp_reason or gen_reason or '特殊狀況')
+            else:
+                weekday_ot_hours += h
+                location_ot_summary[loc]["weekday_hours"] += h
 
-            # Leaves details
-            lv_query = f"SELECT leave_type, duration, google_comp_days FROM leave_records WHERE LOWER(TRIM(name)) = LOWER(TRIM(?)){m_clause}"
-            lv_params = [name] + m_params
-            cursor.execute(lv_query, lv_params)
-            leaves = cursor.fetchall()
-            
-            sick_days = 0.0
-            personal_days = 0.0
-            black_days = 0.0
-            wfh_days = 0.0
-            business_count = 0
-            google_comp_total = 0.0
-            
-            leave_summary = {}
-            for l in leaves:
-                lt = l['leave_type']
-                dur_str = str(l['duration'])
-                dur_val = 0.5 if ('0.5' in dur_str or '半天' in dur_str) else 1.0
-                comp = l['google_comp_days'] or 0.0
-                
-                google_comp_total += comp
-                
-                if lt not in leave_summary:
-                    leave_summary[lt] = {'days': 0.0, 'count': 0}
-                leave_summary[lt]['days'] += dur_val
-                leave_summary[lt]['count'] += 1
-                
-                if lt == '病假':
-                    sick_days += dur_val
-                elif lt == '事假':
-                    personal_days += dur_val
-                elif lt == '黑假':
-                    black_days += dur_val
-                elif lt == 'WFH':
-                    wfh_days += dur_val
-                elif lt == '因公外出':
-                    business_count += 1
+        ot_hours = weekday_ot_hours + weekend_ot_hours
+        team_total_hours += ot_hours
+        team_weekday_hours += weekday_ot_hours
+        team_weekend_hours += weekend_ot_hours
 
-            leave_breakdown = []
-            for lt, ddata in leave_summary.items():
-                if lt in ['因公外出', '出勤確認']:
-                    label = f"{lt} {ddata['count']}次"
-                else:
-                    d_val = ddata['days']
-                    d_str = f"{int(d_val)}天" if d_val.is_integer() else f"{d_val}天"
-                    label = f"{lt} {d_str}"
-                leave_breakdown.append({"type": lt, "label": label})
+        # If no overtime records, query default location for member in that month
+        if not location_ot_summary:
+            curr_loc = get_member_location_at_date(name, fallback_loc_date, location_histories=location_histories, default_locations=default_locations)
+            location_ot_summary[curr_loc] = {
+                "ot_count": 0,
+                "weekday_hours": 0.0,
+                "weekend_hours": 0.0,
+                "total_hours": 0.0
+            }
 
-            # Calculate overall Google comp quota, used (deducted=1), pending (deducted=0), and remaining
-            cursor.execute("SELECT COALESCE(google_comp_quota, 0.0) FROM team_members WHERE LOWER(name) = LOWER(?)", (name,))
-            m_row = cursor.fetchone()
-            m_quota = float(m_row[0] or 0.0) if m_row else 0.0
-
-            cursor.execute("""
-                SELECT date, leave_type, duration, google_comp_days, COALESCE(is_comp_deducted, 1) as is_comp_deducted, reason
-                FROM leave_records 
-                WHERE LOWER(name) = LOWER(?) AND COALESCE(google_comp_days, 0) > 0
-                ORDER BY date ASC
-            """, (name,))
-            comp_rows = cursor.fetchall()
-            
-            deducted_records = []
-            pending_records = []
-            m_used_overall = 0.0
-            m_pending_overall = 0.0
-
-            for cr in comp_rows:
-                c_dict = dict(cr)
-                c_days = float(c_dict.get('google_comp_days') or 0.0)
-                if c_dict.get('is_comp_deducted') == 1:
-                    m_used_overall += c_days
-                    deducted_records.append(f"{c_dict['date']} {c_dict['leave_type']} {c_days}天")
-                else:
-                    m_pending_overall += c_days
-                    pending_records.append(f"{c_dict['date']} {c_dict['leave_type']} {c_days}天")
-
-            m_remaining = m_quota - m_used_overall
-            
-            # Estimated new Google comp leave earned from this month's overtime (Weekday x 1.5, Weekend x 2.0)
-            est_comp_hours = (weekday_ot_hours * 1.5) + (weekend_ot_hours * 2.0)
-            est_comp_days = est_comp_hours / 8.0
-            
-            team_est_comp_hours += est_comp_hours
-            team_est_comp_days += est_comp_days
-
-            stats_list.append({
-                "name": name,
-                "location": get_member_location_at_date(name, f"{month or '2026/07'}/15"),
-                "location_breakdown": location_breakdown,
-                "ot_count": ot_count,
-                "leave_count": len(leaves),
-                "weekday_ot_hours": round(weekday_ot_hours, 2),
-                "weekend_ot_hours": round(weekend_ot_hours, 2),
-                "overtime_hours": round(ot_hours, 2),
-                "est_comp_hours": est_comp_hours,
-                "est_comp_days": est_comp_days,
-                "special_ot_count": special_ot_count,
-                "special_reasons": list(dict.fromkeys(special_reasons_list)),
-                "leave_breakdown": leave_breakdown,
-                "sick_days": sick_days,
-                "personal_days": personal_days,
-                "black_days": black_days,
-                "wfh_days": wfh_days,
-                "business_count": business_count,
-                "google_comp_total": google_comp_total,
-                "google_comp_quota": m_quota,
-                "google_comp_used_total": m_used_overall,
-                "google_comp_pending_total": m_pending_overall,
-                "google_comp_remaining": m_remaining,
-                "google_comp_deducted_details": deducted_records,
-                "google_comp_pending_details": pending_records
+        location_breakdown = []
+        for loc_name, loc_data in location_ot_summary.items():
+            location_breakdown.append({
+                "location": loc_name,
+                "ot_count": loc_data["ot_count"],
+                "weekday_hours": round(loc_data["weekday_hours"], 2),
+                "weekend_hours": round(loc_data["weekend_hours"], 2),
+                "total_hours": round(loc_data["total_hours"], 2)
             })
 
-        # Compute weekly summary breakdown for the month
-        weeks = get_weeks_of_month(base_year, base_month)
-        weekly_summary = []
-        for w in weeks:
-            w_start = w['start_date']
-            w_end = w['end_date']
+        # Leaves details
+        leaves = lv_by_name.get(n_key, [])
+        sick_days = 0.0
+        personal_days = 0.0
+        black_days = 0.0
+        wfh_days = 0.0
+        business_count = 0
+        google_comp_total = 0.0
+        leave_summary = {}
+
+        for l in leaves:
+            lt = l['leave_type']
+            dur_str = str(l.get('duration') or '')
+            dur_val = 0.5 if ('0.5' in dur_str or '半天' in dur_str) else 1.0
+            comp = float(l.get('google_comp_days') or 0.0)
+            google_comp_total += comp
             
-            cursor.execute("""
-                SELECT hours, note, is_special 
-                FROM overtime_records 
-                WHERE date >= ? AND date <= ?
-            """, (w_start, w_end))
-            w_ot_rows = cursor.fetchall()
+            if lt not in leave_summary:
+                leave_summary[lt] = {'days': 0.0, 'count': 0}
+            leave_summary[lt]['days'] += dur_val
+            leave_summary[lt]['count'] += 1
             
-            w_ot_hours = 0.0
-            w_wd_hours = 0.0
-            w_we_hours = 0.0
-            for r in w_ot_rows:
-                h = float(r['hours'] or 0.0)
+            if lt == '病假':
+                sick_days += dur_val
+            elif lt == '事假':
+                personal_days += dur_val
+            elif lt == '黑假':
+                black_days += dur_val
+            elif lt == 'WFH':
+                wfh_days += dur_val
+            elif lt == '因公外出':
+                business_count += 1
+
+        leave_breakdown = []
+        for lt, ddata in leave_summary.items():
+            if lt in ['因公外出', '出勤確認']:
+                label = f"{lt} {ddata['count']}次"
+            else:
+                d_val = ddata['days']
+                d_str = f"{int(d_val)}天" if d_val.is_integer() else f"{d_val}天"
+                label = f"{lt} {d_str}"
+            leave_breakdown.append({"type": lt, "label": label})
+
+        # Comp quota calculation from batch
+        m_quota = member_quota_map.get(n_key, 0.0)
+        comp_rows = comp_by_name.get(n_key, [])
+        deducted_records = []
+        pending_records = []
+        m_used_overall = 0.0
+        m_pending_overall = 0.0
+
+        for c_dict in comp_rows:
+            c_days = float(c_dict.get('google_comp_days') or 0.0)
+            if c_dict.get('is_comp_deducted') == 1:
+                m_used_overall += c_days
+                deducted_records.append(f"{c_dict['date']} {c_dict['leave_type']} {c_days}天")
+            else:
+                m_pending_overall += c_days
+                pending_records.append(f"{c_dict['date']} {c_dict['leave_type']} {c_days}天")
+
+        m_remaining = m_quota - m_used_overall
+        est_comp_hours = (weekday_ot_hours * 1.5) + (weekend_ot_hours * 2.0)
+        est_comp_days = est_comp_hours / 8.0
+        team_est_comp_hours += est_comp_hours
+        team_est_comp_days += est_comp_days
+
+        stats_list.append({
+            "name": name,
+            "location": get_member_location_at_date(name, fallback_loc_date, location_histories=location_histories, default_locations=default_locations),
+            "location_breakdown": location_breakdown,
+            "ot_count": ot_count,
+            "leave_count": len(leaves),
+            "weekday_ot_hours": round(weekday_ot_hours, 2),
+            "weekend_ot_hours": round(weekend_ot_hours, 2),
+            "overtime_hours": round(ot_hours, 2),
+            "est_comp_hours": est_comp_hours,
+            "est_comp_days": est_comp_days,
+            "special_ot_count": special_ot_count,
+            "special_reasons": list(dict.fromkeys(special_reasons_list)),
+            "leave_breakdown": leave_breakdown,
+            "sick_days": sick_days,
+            "personal_days": personal_days,
+            "black_days": black_days,
+            "wfh_days": wfh_days,
+            "business_count": business_count,
+            "google_comp_total": google_comp_total,
+            "google_comp_quota": m_quota,
+            "google_comp_used_total": m_used_overall,
+            "google_comp_pending_total": m_pending_overall,
+            "google_comp_remaining": m_remaining,
+            "google_comp_deducted_details": deducted_records,
+            "google_comp_pending_details": pending_records
+        })
+
+    # Compute weekly summary in-memory without extra DB queries
+    weeks = get_weeks_of_month(base_year, base_month)
+    weekly_summary = []
+    for w in weeks:
+        w_start = normalize_date_fmt(w['start_date'])
+        w_end = normalize_date_fmt(w['end_date'])
+        
+        w_ot_hours = 0.0
+        w_wd_hours = 0.0
+        w_we_hours = 0.0
+        w_ot_count = 0
+        for r in all_ot_rows:
+            r_d = normalize_date_fmt(r.get('date') or '')
+            if w_start <= r_d <= w_end:
+                h = float(r.get('hours') or 0.0)
                 w_ot_hours += h
-                if bool(r['is_special']) or r['note'] == '假日加班':
+                w_ot_count += 1
+                if bool(r.get('is_special')) or r.get('note') == '假日加班':
                     w_we_hours += h
                 else:
                     w_wd_hours += h
-                    
-            cursor.execute("""
-                SELECT google_comp_days, leave_type
-                FROM leave_records
-                WHERE date >= ? AND date <= ?
-            """, (w_start, w_end))
-            w_lv_rows = cursor.fetchall()
-            
-            w_lv_count = len(w_lv_rows)
-            w_comp_used = sum(float(r['google_comp_days'] or 0.0) for r in w_lv_rows)
-            
-            weekly_summary.append({
-                "week_index": w['week_index'],
-                "label": w['label'],
-                "range_text": w['range_text'],
-                "start_date": w_start,
-                "end_date": w_end,
-                "ot_hours": round(w_ot_hours, 2),
-                "weekday_ot_hours": round(w_wd_hours, 2),
-                "weekend_ot_hours": round(w_we_hours, 2),
-                "ot_count": len(w_ot_rows),
-                "leave_count": w_lv_count,
-                "comp_days_used": round(w_comp_used, 2)
-            })
+                
+        w_lv_count = 0
+        w_comp_used = 0.0
+        for r in all_lv_rows:
+            r_d = normalize_date_fmt(r.get('date') or '')
+            if w_start <= r_d <= w_end:
+                w_lv_count += 1
+                w_comp_used += float(r.get('google_comp_days') or 0.0)
+        
+        weekly_summary.append({
+            "week_index": w['week_index'],
+            "label": w['label'],
+            "range_text": w['range_text'],
+            "start_date": w['start_date'],
+            "end_date": w['end_date'],
+            "ot_hours": round(w_ot_hours, 2),
+            "weekday_ot_hours": round(w_wd_hours, 2),
+            "weekend_ot_hours": round(w_we_hours, 2),
+            "ot_count": w_ot_count,
+            "leave_count": w_lv_count,
+            "comp_days_used": round(w_comp_used, 2)
+        })
 
-        team_total_leaves = sum(s.get('leave_count', 0) for s in stats_list)
+    team_total_leaves = sum(s.get('leave_count', 0) for s in stats_list)
 
-        return {
-            "stats": stats_list,
-            "team_total_hours": round(team_total_hours, 2),
-            "team_weekday_hours": round(team_weekday_hours, 2),
-            "team_weekend_hours": round(team_weekend_hours, 2),
-            "team_est_comp_hours": team_est_comp_hours,
-            "team_est_comp_days": team_est_comp_days,
-            "team_total_leaves": team_total_leaves,
-            "weekly_summary": weekly_summary
-        }
+    return {
+        "stats": stats_list,
+        "team_total_hours": round(team_total_hours, 2),
+        "team_weekday_hours": round(team_weekday_hours, 2),
+        "team_weekend_hours": round(team_weekend_hours, 2),
+        "team_est_comp_hours": team_est_comp_hours,
+        "team_est_comp_days": team_est_comp_days,
+        "team_total_leaves": team_total_leaves,
+        "weekly_summary": weekly_summary
+    }

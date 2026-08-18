@@ -814,10 +814,11 @@
             <span>團隊加班與請假管理系統</span>
         </div>
         <div class="header-controls">
-            <div class="month-select-wrapper">
-                <select id="monthSelect" onchange="loadData()">
+            <div class="month-select-wrapper" style="display:flex; align-items:center; gap:0.5rem;">
+                <select id="monthSelect" onchange="syncMonthSelect(this.value)">
                     <!-- Options populated via JS -->
                 </select>
+                <span id="monthLockBadge"></span>
             </div>
             <button class="btn btn-secondary" onclick="exportCSV()">
                 <i class="fa-solid fa-file-csv"></i> 匯出 CSV
@@ -960,14 +961,14 @@
                             <option value="平日加班">平日加班</option>
                             <option value="假日加班">假日加班</option>
                         </select>
-                        <input type="text" id="otSearch" placeholder="搜尋人員/原因/類型/日期..." oninput="loadOvertime()">
+                        <input type="text" id="otSearch" placeholder="搜尋人員/原因/類型/日期..." oninput="debounceLoadOvertime()">
                         <button class="btn btn-secondary" id="btnOtGroupToggle" onclick="toggleOtGrouping()" style="border-color: rgba(99,102,241,0.4); color: #a5b4fc;" title="切換分週群組檢視或平鋪列表">
                             <i class="fa-solid fa-layer-group"></i> 依週次分組：開
                         </button>
                         <button class="btn btn-secondary" onclick="openAswExportModal()" style="border-color: rgba(34, 197, 94, 0.5); color: #86efac;">
                             <i class="fa-solid fa-file-excel"></i> 輸出 ASW 格式表
                         </button>
-                        <button class="btn btn-primary" onclick="showAddOtModal()">
+                        <button class="btn btn-primary" id="btnAddOt" onclick="showAddOtModal()">
                             <i class="fa-solid fa-plus"></i> 新增加班紀錄
                         </button>
                     </div>
@@ -1021,11 +1022,11 @@
                             <option value="出勤確認">出勤確認</option>
                             <option value="因公外出">因公外出</option>
                         </select>
-                        <input type="text" id="leaveSearch" placeholder="搜尋人員/原因/假別/日期..." oninput="loadLeaves()">
+                        <input type="text" id="leaveSearch" placeholder="搜尋人員/原因/假別/日期..." oninput="debounceLoadLeaves()">
                         <button class="btn btn-secondary" id="btnLeaveGroupToggle" onclick="toggleLeaveGrouping()" style="border-color: rgba(6,182,212,0.4); color: #67e8f9;" title="切換分週群組檢視或平鋪列表">
                             <i class="fa-solid fa-layer-group"></i> 依週次分組：開
                         </button>
-                        <button class="btn btn-primary" onclick="showAddLeaveModal()">
+                        <button class="btn btn-primary" id="btnAddLeave" onclick="showAddLeaveModal()">
                             <i class="fa-solid fa-plus"></i> 新增請假紀錄
                         </button>
                     </div>
@@ -1495,6 +1496,20 @@
         let memberLocationMap = {};
         let memberQuotaMap = {};
         let locationHistoriesCache = [];
+
+        // Global Request Counters and AbortControllers to prevent async race conditions
+        let globalFetchRequestId = 0;
+        let globalStatsRequestId = 0;
+        let statsAbortController = null;
+        let globalOtRequestId = 0;
+        let otAbortController = null;
+        let globalLeaveRequestId = 0;
+        let leaveAbortController = null;
+        let globalMembersRequestId = 0;
+        let membersAbortController = null;
+        let globalHistRequestId = 0;
+        let histAbortController = null;
+        let aswExportAbortController = null;
 
         // Progress Bar & Stage Indicator Controller
         const LoadingProgress = {
@@ -1974,6 +1989,60 @@
             loadLeaves();
         }
 
+        // Debounce helpers for search inputs
+        let leaveSearchTimer = null;
+        function debounceLoadLeaves(delay = 220) {
+            if (leaveSearchTimer) clearTimeout(leaveSearchTimer);
+            leaveSearchTimer = setTimeout(() => {
+                loadLeaves();
+            }, delay);
+        }
+
+        let otSearchTimer = null;
+        function debounceLoadOvertime(delay = 220) {
+            if (otSearchTimer) clearTimeout(otSearchTimer);
+            otSearchTimer = setTimeout(() => {
+                loadOvertime();
+            }, delay);
+        }
+
+        // Check if a month or date string is in the past compared to the current system month
+        function isMonthInPast(ymStr) {
+            if (!ymStr) return false;
+            const now = new Date();
+            const currentYear = now.getFullYear();
+            const currentMonth = now.getMonth() + 1; // 1-12
+
+            const parts = ymStr.trim().replace(/-/g, '/').split('/');
+            if (parts.length < 2) return false;
+            const y = parseInt(parts[0], 10);
+            const m = parseInt(parts[1], 10);
+            if (isNaN(y) || isNaN(m)) return false;
+
+            if (y < currentYear) return true;
+            if (y === currentYear && m < currentMonth) return true;
+            return false;
+        }
+
+        function isDateInPastMonth(dateStr) {
+            if (!dateStr) return false;
+            const parts = dateStr.trim().replace(/-/g, '/').split('/');
+            if (parts.length >= 2) {
+                return isMonthInPast(`${parts[0]}/${parts[1]}`);
+            }
+            return false;
+        }
+
+        function updateMonthLockBadge(ym) {
+            const badgeEl = document.getElementById('monthLockBadge');
+            if (!badgeEl) return;
+            if (isMonthInPast(ym)) {
+                badgeEl.innerHTML = `<span class="badge" style="background:rgba(245,158,11,0.22); color:#fcd34d; border:1px solid rgba(245,158,11,0.45); font-size:0.78rem; white-space:nowrap; padding:4px 8px;" title="此月份早於系統當前月份，已自動啟用唯讀保護，無法新增、修改或刪除"><i class="fa-solid fa-lock"></i> 歷史唯讀</span>`;
+            } else {
+                badgeEl.innerHTML = `<span class="badge" style="background:rgba(34,197,94,0.18); color:#4ade80; border:1px solid rgba(34,197,94,0.35); font-size:0.78rem; white-space:nowrap; padding:4px 8px;" title="當前或未來月份，可正常新增與編輯資料"><i class="fa-solid fa-pen-to-square"></i> 可編輯</span>`;
+            }
+        }
+
         // Initialize Month Selectors (Starting from 2026/07)
         function initMonthSelector() {
             const headerSelect = document.getElementById('monthSelect');
@@ -1992,7 +2061,13 @@
             
             while (iterDate <= targetMaxDate || optionsHtml.length < 12) {
                 const ym = `${iterDate.getFullYear()}/${String(iterDate.getMonth() + 1).padStart(2, '0')}`;
-                optionsHtml.push(`<option value="${ym}">${ym}</option>`);
+                let label = ym;
+                if (isMonthInPast(ym)) {
+                    label = `${ym} 🔒(歷史唯讀)`;
+                } else if (iterDate.getFullYear() === currentYear && (iterDate.getMonth() + 1) === currentMonth) {
+                    label = `${ym} ⭐(當前月份)`;
+                }
+                optionsHtml.push(`<option value="${ym}">${label}</option>`);
                 iterDate.setMonth(iterDate.getMonth() + 1);
             }
 
@@ -2018,8 +2093,6 @@
             if (document.getElementById('parseImageYear')) document.getElementById('parseImageYear').value = currentYear;
         }
 
-        let globalFetchRequestId = 0;
-
         // Sync month selector across tabs with smooth transitions & toast feedback
         async function syncMonthSelect(val) {
             const el = document.getElementById('monthSelect');
@@ -2027,6 +2100,8 @@
             
             localStorage.setItem('selectedMonth', val);
             currentSelectedDashWeek = 'all';
+
+            updateMonthLockBadge(val);
 
             const parts = val.split('/');
             const monthText = parts.length === 2 ? `${parts[0]}年${parts[1]}月` : val;
@@ -2052,6 +2127,12 @@
         async function switchTab(tabId) {
             localStorage.setItem('activeTab', tabId);
             setActiveTabUI(tabId);
+            // Cancel any pending tab-specific queries
+            if (statsAbortController) { try { statsAbortController.abort(); } catch(e) {} }
+            if (otAbortController) { try { otAbortController.abort(); } catch(e) {} }
+            if (leaveAbortController) { try { leaveAbortController.abort(); } catch(e) {} }
+            if (membersAbortController) { try { membersAbortController.abort(); } catch(e) {} }
+            if (histAbortController) { try { histAbortController.abort(); } catch(e) {} }
             await loadData();
         }
 
@@ -2091,6 +2172,10 @@
             const currentReqId = ++globalFetchRequestId;
             const monthSelectEl = document.getElementById('monthSelect');
             const tabBtns = document.querySelectorAll('.tab-btn');
+
+            if (monthSelectEl) {
+                updateMonthLockBadge(monthSelectEl.value);
+            }
 
             // 1. Lock controls during load to prevent multi-clicking & race conditions
             if (monthSelectEl) {
@@ -2195,11 +2280,15 @@
             }
         }
 
-        let globalStatsRequestId = 0;
-
         // Load Stats & Summary Table
         async function loadStats() {
             const currentStatsReqId = ++globalStatsRequestId;
+            if (statsAbortController) {
+                try { statsAbortController.abort(); } catch(e) {}
+            }
+            statsAbortController = new AbortController();
+            const signal = statsAbortController.signal;
+
             const month = document.getElementById('monthSelect').value || '2026/07';
             const parts = month.split('/');
             const yearNum = parseInt(parts[0], 10);
@@ -2246,194 +2335,206 @@
             const estTitleEl = document.getElementById('statEstCompTitle');
             if (estTitleEl) estTitleEl.innerHTML = `<span style="color:#4ade80;font-size:0.9rem;font-weight:600;">${weekObj ? '第' + weekObj.weekIndex + '週' : monthZh}</span> 加班預估可獲補休`;
 
-            const res = await fetch(queryUrl);
-            const data = await res.json();
+            try {
+                const res = await fetch(queryUrl, { signal });
+                if (currentStatsReqId !== globalStatsRequestId) return;
+                const data = await res.json();
+                if (currentStatsReqId !== globalStatsRequestId) return;
 
-            // Discard stale in-flight responses
-            if (currentStatsReqId !== globalStatsRequestId) return;
+                // Render Weekly Navigation Pills for Dashboard, Overtime, and Leaves
+                renderAllWeeklyPills(data, monthZh);
 
-            // Render Weekly Navigation Pills for Dashboard, Overtime, and Leaves
-            renderAllWeeklyPills(data, monthZh);
-
-            const statsList = Array.isArray(data) ? data : (data.stats || []);
-            let totalOt = data.team_total_hours || 0;
-            let teamWeekday = data.team_weekday_hours || 0;
-            let teamWeekend = data.team_weekend_hours || 0;
-            let teamEstHours = data.team_est_comp_hours || 0;
-            let teamEstDays = data.team_est_comp_days || 0;
-            
-            // Calculate totalLeave and activeMembersCount BEFORE rendering banner
-            let totalLeave = (data.team_total_leaves !== undefined)
-                ? data.team_total_leaves
-                : statsList.reduce((acc, s) => acc + (s.leave_count !== undefined ? s.leave_count : ((s.sick_days || 0) + (s.personal_days || 0) + (s.black_days || 0) + (s.wfh_days || 0))), 0);
-
-            const activeMembersCount = statsList.filter(s => (s.ot_count || 0) > 0 || (s.leave_count || 0) > 0).length;
-
-            // Update Active Scope Banner
-            const bannerEl = document.getElementById('dashActiveScopeBanner');
-            if (bannerEl) {
-                if (!weekObj) {
-                    bannerEl.innerHTML = `
-                        <div style="display:flex; align-items:center; gap:0.5rem; flex-wrap:wrap;">
-                            <span class="badge" style="background:rgba(99,102,241,0.25); color:#c7d2fe; font-size:0.82rem;"><i class="fa-solid fa-calendar"></i> 全月累計總覽</span>
-                            <span style="color:var(--text-muted);">顯示 ${monthZh} 全月份累計，共 <strong>${activeMembersCount}</strong> 位成員有出勤/請假紀錄</span>
-                        </div>
-                        <div style="color:var(--text-muted); font-size:0.82rem;">
-                            <span style="color:#818cf8; margin-right:10px;"><i class="fa-solid fa-user-clock"></i> 加班共 <strong>${totalOt}h</strong></span>
-                            <span style="color:#38bdf8;"><i class="fa-solid fa-plane-departure"></i> 請假共 <strong>${totalLeave}筆</strong></span>
-                        </div>
-                    `;
-                } else {
-                    const emptyNotice = (activeMembersCount === 0 && totalOt === 0 && totalLeave === 0) 
-                        ? `<span class="badge" style="background:rgba(245,158,11,0.15); color:#fcd34d; font-size:0.8rem; margin-left:0.4rem;"><i class="fa-solid fa-circle-info"></i> 本週全員皆無加班或請假紀錄 (均為0)</span>` 
-                        : '';
-                    bannerEl.innerHTML = `
-                        <div style="display:flex; align-items:center; gap:0.5rem; flex-wrap:wrap;">
-                            <span class="badge" style="background:rgba(56,189,248,0.25); color:#7dd3fc; font-size:0.82rem;"><i class="fa-solid fa-calendar-days"></i> 第 ${weekObj.weekIndex} 週 (${weekObj.rangeText})</span>
-                            <span style="color:var(--text-muted);">本週有活動成員：<strong style="color:${activeMembersCount > 0 ? '#4ade80' : 'var(--text-muted)'};">${activeMembersCount}</strong> 人</span>
-                            ${emptyNotice}
-                        </div>
-                        <div style="font-size:0.82rem;">
-                            <span style="color:#818cf8; margin-right:10px;"><i class="fa-solid fa-user-clock"></i> 本週加班: <strong>${totalOt}h</strong></span>
-                            <span style="color:#38bdf8;"><i class="fa-solid fa-plane-departure"></i> 本週請假: <strong>${totalLeave}筆</strong></span>
-                        </div>
-                    `;
-                }
-            }
-
-            const tbody = document.getElementById('summaryTableBody');
-            tbody.innerHTML = '';
-
-            let renderedCount = 0;
-
-            statsList.forEach(item => {
-                const otCount = item.ot_count !== undefined ? item.ot_count : 0;
-                const weekdayOt = item.weekday_ot_hours !== undefined ? item.weekday_ot_hours : 0;
-                const weekendOt = item.weekend_ot_hours !== undefined ? item.weekend_ot_hours : 0;
-                const estHours = item.est_comp_hours !== undefined ? item.est_comp_hours : 0;
-                const estDays = item.est_comp_days !== undefined ? item.est_comp_days : 0;
-                const spCount = item.special_ot_count || 0;
-                const spReasons = (item.special_reasons || []).join(', ');
-
-                const googleComp = item.google_comp_total !== undefined ? item.google_comp_total : (item.google_comp_days || 0);
-                const leaveCount = item.leave_count !== undefined ? item.leave_count : ((item.sick_days || 0) + (item.personal_days || 0) + (item.black_days || 0) + (item.wfh_days || 0));
-
-                const hasActivity = (otCount > 0 || leaveCount > 0);
-                if (isDashActiveOnly && !hasActivity) {
-                    return; // Skip inactive members when filter is active
-                }
-                renderedCount++;
-
-                let spDisplay = '-';
-                if (spCount > 0) {
-                    spDisplay = `<span class="badge" style="background:rgba(99,102,241,0.2);color:#a5b4fc;border:1px solid rgba(99,102,241,0.4);"><i class="fa-solid fa-star"></i> ${spCount}筆 (${spReasons || '特殊狀況'})</span>`;
-                }
-
-                const weekendBadge = weekendOt > 0 
-                    ? `<span class="badge" style="background:rgba(245,158,11,0.2);color:#fcd34d;border:1px solid rgba(245,158,11,0.4);">${weekendOt} hr</span>` 
-                    : `<span style="color: var(--text-muted); font-size: 0.9rem;">0.0 hr</span>`;
-
-                const estTitle = `加班預估換算補休細節：\n• 平日加班：${weekdayOt}h × 1.5 = ${weekdayOt * 1.5}h\n• 假日加班：${weekendOt}h × 2.0 = ${weekendOt * 2.0}h\n• 總換算補休：${estHours}h / 8 = ${estDays}天`;
-                const estBadge = estHours > 0 
-                    ? `<span class="badge" style="background:rgba(34,197,94,0.18);color:#4ade80;border:1px solid rgba(34,197,94,0.35);cursor:pointer;" title="${estTitle}"><i class="fa-solid fa-plus"></i> ${estDays} 天 <span style="font-size:0.75rem;opacity:0.85;">(+${estHours}h)</span></span>`
-                    : `<span style="color:var(--text-muted);font-size:0.88rem;">-</span>`;
-
-                const leaveBreakdown = item.leave_breakdown || [];
-                let leaveDetailHtml = '-';
-                if (leaveBreakdown.length > 0) {
-                    leaveDetailHtml = leaveBreakdown.map(b => {
-                        const bClass = getLeaveBadgeClass(b.type);
-                        return `<span class="badge ${bClass}" style="margin-right:4px;">${b.label}</span>`;
-                    }).join('');
-                }
-
-                let locDetailHtml = '';
-                const locList = item.location_breakdown || [];
-                if (locList.length > 0) {
-                    locDetailHtml = locList.map(lb => {
-                        let hrsStr = '';
-                        if (lb.weekday_hours > 0 && lb.weekend_hours > 0) {
-                            hrsStr = `平日 ${lb.weekday_hours}h / 假日 ${lb.weekend_hours}h`;
-                        } else if (lb.weekend_hours > 0) {
-                            hrsStr = `假日 ${lb.weekend_hours}h`;
-                        } else if (lb.weekday_hours > 0) {
-                            hrsStr = `${lb.weekday_hours}h`;
-                        } else {
-                            hrsStr = `無加班`;
-                        }
-                        
-                        const isFactory = ['台灣工廠', '台灣實驗室', '休士頓工廠', '美國LAB', '墨西哥GDL工廠'].includes(lb.location);
-                        const badgeStyle = isFactory
-                            ? 'background:rgba(99,102,241,0.18);color:#c7d2fe;border:1px solid rgba(99,102,241,0.35);'
-                            : 'background:rgba(148,163,184,0.15);color:#cbd5e1;border:1px solid rgba(148,163,184,0.3);';
-
-                        if (lb.ot_count > 0) {
-                            return `<div style="margin:3px 0;white-space:nowrap;"><span class="badge" style="${badgeStyle}">📍 ${lb.location}</span> <strong style="color:var(--text);">${lb.ot_count}筆</strong> <span style="font-size:0.82rem;color:var(--text-muted);">(${hrsStr})</span></div>`;
-                        } else {
-                            return `<div style="margin:3px 0;white-space:nowrap;"><span class="badge" style="${badgeStyle}">📍 ${lb.location}</span> <span style="font-size:0.82rem;color:var(--text-muted);">(無加班)</span></div>`;
-                        }
-                    }).join('');
-                } else {
-                    locDetailHtml = `<span class="badge" style="background:rgba(148,163,184,0.15);color:#cbd5e1;">📍 ${item.location || '-'}</span>`;
-                }
-
-                const mQuota = item.google_comp_quota !== undefined ? item.google_comp_quota : 0;
-                const mUsed = item.google_comp_used_total !== undefined ? item.google_comp_used_total : 0;
-                const mPending = item.google_comp_pending_total !== undefined ? item.google_comp_pending_total : 0;
-                const mRem = item.google_comp_remaining !== undefined ? item.google_comp_remaining : (mQuota - mUsed);
-
-                const deductedDetails = (item.google_comp_deducted_details || []).join('\n');
-                const pendingDetails = (item.google_comp_pending_details || []).join('\n');
+                const statsList = Array.isArray(data) ? data : (data.stats || []);
+                let totalOt = data.team_total_hours || 0;
+                let teamWeekday = data.team_weekday_hours || 0;
+                let teamWeekend = data.team_weekend_hours || 0;
+                let teamEstHours = data.team_est_comp_hours || 0;
+                let teamEstDays = data.team_est_comp_days || 0;
                 
-                const usedTitle = deductedDetails ? `title="累計已扣補休紀錄明細：\n${deductedDetails}" style="cursor:pointer; border-bottom:1px dashed rgba(255,255,255,0.4);"` : '';
-                const pendingTitle = pendingDetails ? `title="待扣補休紀錄明細：\n${pendingDetails}" style="cursor:pointer; border-bottom:1px dashed rgba(245,158,11,0.5);"` : '';
+                // Calculate totalLeave and activeMembersCount BEFORE rendering banner
+                let totalLeave = (data.team_total_leaves !== undefined)
+                    ? data.team_total_leaves
+                    : statsList.reduce((acc, s) => acc + (s.leave_count !== undefined ? s.leave_count : ((s.sick_days || 0) + (s.personal_days || 0) + (s.black_days || 0) + (s.wfh_days || 0))), 0);
 
-                const compStyle = mRem > 0 ? 'color: #38bdf8; font-weight: bold;' : 'color: #ef4444; font-weight: bold;';
-                const pendingInfo = mPending > 0 ? ` <span style="color:#fcd34d; font-size:0.75rem; white-space:nowrap;" ${pendingTitle}>(待扣 ${mPending}天)</span>` : '';
+                const activeMembersCount = statsList.filter(s => (s.ot_count || 0) > 0 || (s.leave_count || 0) > 0).length;
 
-                const compDisplay = mQuota > 0 
-                    ? `<div><strong>${googleComp} 天</strong>${pendingInfo}</div><div style="font-size: 0.78rem; color: var(--text-muted); margin-top:2px;">總額 ${mQuota}天 | <span ${usedTitle}>已扣 ${mUsed}天</span> | <span style="${compStyle}">最新剩 ${mRem}天</span></div>` 
-                    : `<div><strong>${googleComp} 天</strong>${pendingInfo}</div>`;
+                // Update Active Scope Banner
+                const bannerEl = document.getElementById('dashActiveScopeBanner');
+                if (bannerEl) {
+                    const isPast = isMonthInPast(month);
+                    const pastBadge = isPast 
+                        ? `<span class="badge" style="background:rgba(245,158,11,0.2); color:#fcd34d; border:1px solid rgba(245,158,11,0.45); font-size:0.8rem; margin-left:0.4rem;"><i class="fa-solid fa-lock"></i> 歷史月份已封存 (唯讀)</span>` 
+                        : '';
 
-                const tr = document.createElement('tr');
-                if (hasActivity) {
-                    tr.style.background = 'rgba(99, 102, 241, 0.08)';
-                    tr.style.borderLeft = '3px solid #818cf8';
-                } else {
-                    tr.style.opacity = '0.7';
+                    if (!weekObj) {
+                        bannerEl.innerHTML = `
+                            <div style="display:flex; align-items:center; gap:0.5rem; flex-wrap:wrap;">
+                                <span class="badge" style="background:rgba(99,102,241,0.25); color:#c7d2fe; font-size:0.82rem;"><i class="fa-solid fa-calendar"></i> 全月累計總覽</span>
+                                <span style="color:var(--text-muted);">顯示 ${monthZh} 全月份累計，共 <strong>${activeMembersCount}</strong> 位成員有出勤/請假紀錄</span>
+                                ${pastBadge}
+                            </div>
+                            <div style="color:var(--text-muted); font-size:0.82rem;">
+                                <span style="color:#818cf8; margin-right:10px;"><i class="fa-solid fa-user-clock"></i> 加班共 <strong>${totalOt}h</strong></span>
+                                <span style="color:#38bdf8;"><i class="fa-solid fa-plane-departure"></i> 請假共 <strong>${totalLeave}筆</strong></span>
+                            </div>
+                        `;
+                    } else {
+                        const emptyNotice = (activeMembersCount === 0 && totalOt === 0 && totalLeave === 0) 
+                            ? `<span class="badge" style="background:rgba(245,158,11,0.15); color:#fcd34d; font-size:0.8rem; margin-left:0.4rem;"><i class="fa-solid fa-circle-info"></i> 本週全員皆無加班或請假紀錄 (均為0)</span>` 
+                            : '';
+                        bannerEl.innerHTML = `
+                            <div style="display:flex; align-items:center; gap:0.5rem; flex-wrap:wrap;">
+                                <span class="badge" style="background:rgba(56,189,248,0.25); color:#7dd3fc; font-size:0.82rem;"><i class="fa-solid fa-calendar-days"></i> 第 ${weekObj.weekIndex} 週 (${weekObj.rangeText})</span>
+                                <span style="color:var(--text-muted);">本週有活動成員：<strong style="color:${activeMembersCount > 0 ? '#4ade80' : 'var(--text-muted)'};">${activeMembersCount}</strong> 人</span>
+                                ${pastBadge}
+                                ${emptyNotice}
+                            </div>
+                            <div style="font-size:0.82rem;">
+                                <span style="color:#818cf8; margin-right:10px;"><i class="fa-solid fa-user-clock"></i> 本週加班: <strong>${totalOt}h</strong></span>
+                                <span style="color:#38bdf8;"><i class="fa-solid fa-plane-departure"></i> 本週請假: <strong>${totalLeave}筆</strong></span>
+                            </div>
+                        `;
+                    }
                 }
 
-                const activityBadge = hasActivity
-                    ? `<span class="badge" style="background:rgba(34,197,94,0.18);color:#4ade80;font-size:0.7rem;margin-left:4px;" title="該成員在此週有加班或請假紀錄"><i class="fa-solid fa-check"></i> 有活動</span>`
-                    : '';
+                const tbody = document.getElementById('summaryTableBody');
+                if (!tbody) return;
+                tbody.innerHTML = '';
 
-                tr.innerHTML = `
-                    <td><strong>${item.name}</strong> ${activityBadge}</td>
-                    <td>${locDetailHtml}</td>
-                    <td>${otCount > 0 ? `<strong style="color:#818cf8;">${otCount} 筆</strong>` : `<span style="color:var(--text-muted);">0 筆</span>`}</td>
-                    <td><span class="badge badge-ot">${weekdayOt} hr</span></td>
-                    <td>${weekendBadge}</td>
-                    <td>${estBadge}</td>
-                    <td>${spDisplay}</td>
-                    <td>${leaveCount > 0 ? `<strong style="color:#38bdf8;">${leaveCount} 筆</strong>` : `<span style="color:var(--text-muted);">0 筆</span>`}</td>
-                    <td>${leaveDetailHtml}</td>
-                    <td>${compDisplay}</td>
-                `;
-                tbody.appendChild(tr);
-            });
+                let renderedCount = 0;
 
-            if (renderedCount === 0) {
-                tbody.innerHTML = `<tr><td colspan="10" style="text-align:center; padding: 2.5rem 1rem; color: var(--text-muted);"><i class="fa-solid fa-calendar-check" style="font-size: 1.8rem; color: #818cf8; display:block; margin-bottom: 0.6rem;"></i>${weekObj ? `${monthZh} ${weekObj.label}` : monthZh} 全員皆無加班或請假活動</td></tr>`;
+                statsList.forEach(item => {
+                    const otCount = item.ot_count !== undefined ? item.ot_count : 0;
+                    const weekdayOt = item.weekday_ot_hours !== undefined ? item.weekday_ot_hours : 0;
+                    const weekendOt = item.weekend_ot_hours !== undefined ? item.weekend_ot_hours : 0;
+                    const estHours = item.est_comp_hours !== undefined ? item.est_comp_hours : 0;
+                    const estDays = item.est_comp_days !== undefined ? item.est_comp_days : 0;
+                    const spCount = item.special_ot_count || 0;
+                    const spReasons = (item.special_reasons || []).join(', ');
+
+                    const googleComp = item.google_comp_total !== undefined ? item.google_comp_total : (item.google_comp_days || 0);
+                    const leaveCount = item.leave_count !== undefined ? item.leave_count : ((item.sick_days || 0) + (item.personal_days || 0) + (item.black_days || 0) + (item.wfh_days || 0));
+
+                    const hasActivity = (otCount > 0 || leaveCount > 0);
+                    if (isDashActiveOnly && !hasActivity) {
+                        return; // Skip inactive members when filter is active
+                    }
+                    renderedCount++;
+
+                    let spDisplay = '-';
+                    if (spCount > 0) {
+                        spDisplay = `<span class="badge" style="background:rgba(99,102,241,0.2);color:#a5b4fc;border:1px solid rgba(99,102,241,0.4);"><i class="fa-solid fa-star"></i> ${spCount}筆 (${spReasons || '特殊狀況'})</span>`;
+                    }
+
+                    const weekendBadge = weekendOt > 0 
+                        ? `<span class="badge" style="background:rgba(245,158,11,0.2);color:#fcd34d;border:1px solid rgba(245,158,11,0.4);">${weekendOt} hr</span>` 
+                        : `<span style="color: var(--text-muted); font-size: 0.9rem;">0.0 hr</span>`;
+
+                    const estTitle = `加班預估換算補休細節：\n• 平日加班：${weekdayOt}h × 1.5 = ${weekdayOt * 1.5}h\n• 假日加班：${weekendOt}h × 2.0 = ${weekendOt * 2.0}h\n• 總換算補休：${estHours}h / 8 = ${estDays}天`;
+                    const estBadge = estHours > 0 
+                        ? `<span class="badge" style="background:rgba(34,197,94,0.18);color:#4ade80;border:1px solid rgba(34,197,94,0.35);cursor:pointer;" title="${estTitle}"><i class="fa-solid fa-plus"></i> ${estDays} 天 <span style="font-size:0.75rem;opacity:0.85;">(+${estHours}h)</span></span>`
+                        : `<span style="color:var(--text-muted);font-size:0.88rem;">-</span>`;
+
+                    const leaveBreakdown = item.leave_breakdown || [];
+                    let leaveDetailHtml = '-';
+                    if (leaveBreakdown.length > 0) {
+                        leaveDetailHtml = leaveBreakdown.map(b => {
+                            const bClass = getLeaveBadgeClass(b.type);
+                            return `<span class="badge ${bClass}" style="margin-right:4px;">${b.label}</span>`;
+                        }).join('');
+                    }
+
+                    let locDetailHtml = '';
+                    const locList = item.location_breakdown || [];
+                    if (locList.length > 0) {
+                        locDetailHtml = locList.map(lb => {
+                            let hrsStr = '';
+                            if (lb.weekday_hours > 0 && lb.weekend_hours > 0) {
+                                hrsStr = `平日 ${lb.weekday_hours}h / 假日 ${lb.weekend_hours}h`;
+                            } else if (lb.weekend_hours > 0) {
+                                hrsStr = `假日 ${lb.weekend_hours}h`;
+                            } else if (lb.weekday_hours > 0) {
+                                hrsStr = `${lb.weekday_hours}h`;
+                            } else {
+                                hrsStr = `無加班`;
+                            }
+                            
+                            const isFactory = ['台灣工廠', '台灣實驗室', '休士頓工廠', '美國LAB', '墨西哥GDL工廠'].includes(lb.location);
+                            const badgeStyle = isFactory
+                                ? 'background:rgba(99,102,241,0.18);color:#c7d2fe;border:1px solid rgba(99,102,241,0.35);'
+                                : 'background:rgba(148,163,184,0.15);color:#cbd5e1;border:1px solid rgba(148,163,184,0.3);';
+
+                            if (lb.ot_count > 0) {
+                                return `<div style="margin:3px 0;white-space:nowrap;"><span class="badge" style="${badgeStyle}">📍 ${lb.location}</span> <strong style="color:var(--text);">${lb.ot_count}筆</strong> <span style="font-size:0.82rem;color:var(--text-muted);">(${hrsStr})</span></div>`;
+                            } else {
+                                return `<div style="margin:3px 0;white-space:nowrap;"><span class="badge" style="${badgeStyle}">📍 ${lb.location}</span> <span style="font-size:0.82rem;color:var(--text-muted);">(無加班)</span></div>`;
+                            }
+                        }).join('');
+                    } else {
+                        locDetailHtml = `<span class="badge" style="background:rgba(148,163,184,0.15);color:#cbd5e1;">📍 ${item.location || '-'}</span>`;
+                    }
+
+                    const mQuota = item.google_comp_quota !== undefined ? item.google_comp_quota : 0;
+                    const mUsed = item.google_comp_used_total !== undefined ? item.google_comp_used_total : 0;
+                    const mPending = item.google_comp_pending_total !== undefined ? item.google_comp_pending_total : 0;
+                    const mRem = item.google_comp_remaining !== undefined ? item.google_comp_remaining : (mQuota - mUsed);
+
+                    const deductedDetails = (item.google_comp_deducted_details || []).join('\n');
+                    const pendingDetails = (item.google_comp_pending_details || []).join('\n');
+                    
+                    const usedTitle = deductedDetails ? `title="累計已扣補休紀錄明細：\n${deductedDetails}" style="cursor:pointer; border-bottom:1px dashed rgba(255,255,255,0.4);"` : '';
+                    const pendingTitle = pendingDetails ? `title="待扣補休紀錄明細：\n${pendingDetails}" style="cursor:pointer; border-bottom:1px dashed rgba(245,158,11,0.5);"` : '';
+
+                    const compStyle = mRem > 0 ? 'color: #38bdf8; font-weight: bold;' : 'color: #ef4444; font-weight: bold;';
+                    const pendingInfo = mPending > 0 ? ` <span style="color:#fcd34d; font-size:0.75rem; white-space:nowrap;" ${pendingTitle}>(待扣 ${mPending}天)</span>` : '';
+
+                    const compDisplay = mQuota > 0 
+                        ? `<div><strong>${googleComp} 天</strong>${pendingInfo}</div><div style="font-size: 0.78rem; color: var(--text-muted); margin-top:2px;">總額 ${mQuota}天 | <span ${usedTitle}>已扣 ${mUsed}天</span> | <span style="${compStyle}">最新剩 ${mRem}天</span></div>` 
+                        : `<div><strong>${googleComp} 天</strong>${pendingInfo}</div>`;
+
+                    const tr = document.createElement('tr');
+                    if (hasActivity) {
+                        tr.style.background = 'rgba(99, 102, 241, 0.08)';
+                        tr.style.borderLeft = '3px solid #818cf8';
+                    } else {
+                        tr.style.opacity = '0.7';
+                    }
+
+                    const activityBadge = hasActivity
+                        ? `<span class="badge" style="background:rgba(34,197,94,0.18);color:#4ade80;font-size:0.7rem;margin-left:4px;" title="該成員在此週有加班或請假紀錄"><i class="fa-solid fa-check"></i> 有活動</span>`
+                        : '';
+
+                    tr.innerHTML = `
+                        <td><strong>${item.name}</strong> ${activityBadge}</td>
+                        <td>${locDetailHtml}</td>
+                        <td>${otCount > 0 ? `<strong style="color:#818cf8;">${otCount} 筆</strong>` : `<span style="color:var(--text-muted);">0 筆</span>`}</td>
+                        <td><span class="badge badge-ot">${weekdayOt} hr</span></td>
+                        <td>${weekendBadge}</td>
+                        <td>${estBadge}</td>
+                        <td>${spDisplay}</td>
+                        <td>${leaveCount > 0 ? `<strong style="color:#38bdf8;">${leaveCount} 筆</strong>` : `<span style="color:var(--text-muted);">0 筆</span>`}</td>
+                        <td>${leaveDetailHtml}</td>
+                        <td>${compDisplay}</td>
+                    `;
+                    tbody.appendChild(tr);
+                });
+
+                if (renderedCount === 0) {
+                    tbody.innerHTML = `<tr><td colspan="10" style="text-align:center; padding: 2.5rem 1rem; color: var(--text-muted);"><i class="fa-solid fa-calendar-check" style="font-size: 1.8rem; color: #818cf8; display:block; margin-bottom: 0.6rem;"></i>${weekObj ? `${monthZh} ${weekObj.label}` : monthZh} 全員皆無加班或請假活動</td></tr>`;
+                }
+
+                document.getElementById('stat-total-ot').innerHTML = `${totalOt.toFixed(1)} <span style="font-size:0.85rem;font-weight:normal;color:var(--text-muted);">(平日${teamWeekday.toFixed(1)}h / 假日${teamWeekend.toFixed(1)}h)</span>`;
+                document.getElementById('stat-total-leave').textContent = `${totalLeave} 筆`;
+                
+                const statEstComp = document.getElementById('stat-est-comp');
+                if (statEstComp) {
+                    statEstComp.textContent = `+${teamEstDays} 天 (+${teamEstHours}h)`;
+                }
+                document.getElementById('stat-member-count').textContent = `${statsList.length} 人`;
+            } catch (err) {
+                if (err.name === 'AbortError') return;
+                console.error('loadStats error:', err);
             }
-
-            document.getElementById('stat-total-ot').innerHTML = `${totalOt.toFixed(1)} <span style="font-size:0.85rem;font-weight:normal;color:var(--text-muted);">(平日${teamWeekday.toFixed(1)}h / 假日${teamWeekend.toFixed(1)}h)</span>`;
-            document.getElementById('stat-total-leave').textContent = `${totalLeave} 筆`;
-            
-            const statEstComp = document.getElementById('stat-est-comp');
-            if (statEstComp) {
-                statEstComp.textContent = `+${teamEstDays} 天 (+${teamEstHours}h)`;
-            }
-            document.getElementById('stat-member-count').textContent = `${statsList.length} 人`;
         }
 
         function normDate(d) {
@@ -2537,12 +2638,40 @@
 
         // Load Overtime Records
         async function loadOvertime() {
+            const currentReqId = ++globalOtRequestId;
+            if (otAbortController) {
+                try { otAbortController.abort(); } catch(e) {}
+            }
+            otAbortController = new AbortController();
+            const signal = otAbortController.signal;
+
             await refreshMemberLocationMap();
+            if (currentReqId !== globalOtRequestId) return;
+
             const month = document.getElementById('monthSelect').value;
+            const isLockedMonth = isMonthInPast(month);
             const parts = month.split('/');
             const yearNum = parseInt(parts[0], 10);
             const monthNum = parseInt(parts[1], 10);
             const monthWeeks = getWeeksInMonth(yearNum, monthNum);
+
+            // Update Add Overtime Button state based on month lock
+            const addOtBtn = document.getElementById('btnAddOt');
+            if (addOtBtn) {
+                if (isLockedMonth) {
+                    addOtBtn.disabled = true;
+                    addOtBtn.style.opacity = '0.45';
+                    addOtBtn.style.cursor = 'not-allowed';
+                    addOtBtn.style.filter = 'grayscale(1)';
+                    addOtBtn.setAttribute('title', '🔒 歷史月份已封存鎖定，無法新增加班紀錄');
+                } else {
+                    addOtBtn.disabled = false;
+                    addOtBtn.style.opacity = '1';
+                    addOtBtn.style.cursor = 'pointer';
+                    addOtBtn.style.filter = 'none';
+                    addOtBtn.removeAttribute('title');
+                }
+            }
 
             const search = document.getElementById('otSearch').value;
             const otType = document.getElementById('otTypeFilter').value;
@@ -2563,71 +2692,119 @@
                 }
             }
 
-            const res = await fetch(queryUrl);
-            const records = await res.json();
+            try {
+                const res = await fetch(queryUrl, { signal });
+                if (currentReqId !== globalOtRequestId) return;
+                const records = await res.json();
+                if (currentReqId !== globalOtRequestId) return;
 
-            const tbody = document.getElementById('overtimeTableBody');
-            tbody.innerHTML = '';
+                const tbody = document.getElementById('overtimeTableBody');
+                if (!tbody) return;
+                tbody.innerHTML = '';
 
-            if (records.length === 0) {
-                tbody.innerHTML = `<tr><td colspan="8" style="text-align:center; color:var(--text-muted); padding:1.5rem;">此條件下無加班紀錄</td></tr>`;
-                return;
-            }
+                if (records.length === 0) {
+                    tbody.innerHTML = `<tr><td colspan="8" style="text-align:center; color:var(--text-muted); padding:1.5rem;">此條件下無加班紀錄</td></tr>`;
+                    return;
+                }
 
-            // If grouping by week is enabled
-            if (isOtGroupedByWeek) {
-                // Group records by weekIndex
-                const grouped = {};
-                records.forEach(r => {
-                    const wInfo = getWeekInfoForDate(r.date, monthWeeks);
-                    const wIdx = wInfo ? wInfo.weekIndex : 0;
-                    if (!grouped[wIdx]) {
-                        grouped[wIdx] = {
-                            weekInfo: wInfo,
-                            records: [],
-                            totalHours: 0.0,
-                            weekdayHours: 0.0,
-                            weekendHours: 0.0
-                        };
-                    }
-                    grouped[wIdx].records.push(r);
-                    const h = parseFloat(r.hours || 0);
-                    grouped[wIdx].totalHours += h;
-                    if (r.note === '假日加班' || !!r.is_special) {
-                        grouped[wIdx].weekendHours += h;
-                    } else {
-                        grouped[wIdx].weekdayHours += h;
-                    }
-                });
+                // If grouping by week is enabled
+                if (isOtGroupedByWeek) {
+                    // Group records by weekIndex
+                    const grouped = {};
+                    records.forEach(r => {
+                        const wInfo = getWeekInfoForDate(r.date, monthWeeks);
+                        const wIdx = wInfo ? wInfo.weekIndex : 0;
+                        if (!grouped[wIdx]) {
+                            grouped[wIdx] = {
+                                weekInfo: wInfo,
+                                records: [],
+                                totalHours: 0.0,
+                                weekdayHours: 0.0,
+                                weekendHours: 0.0
+                            };
+                        }
+                        grouped[wIdx].records.push(r);
+                        const h = parseFloat(r.hours || 0);
+                        grouped[wIdx].totalHours += h;
+                        if (r.note === '假日加班' || !!r.is_special) {
+                            grouped[wIdx].weekendHours += h;
+                        } else {
+                            grouped[wIdx].weekdayHours += h;
+                        }
+                    });
 
-                // Render each week group in order
-                const sortedKeys = Object.keys(grouped).sort((a, b) => parseInt(a) - parseInt(b));
-                sortedKeys.forEach(wIdx => {
-                    const group = grouped[wIdx];
-                    const wInfo = group.weekInfo;
-                    const groupLabel = wInfo ? `第 ${wInfo.weekIndex} 週 (${wInfo.startDate} ~ ${wInfo.endDate})` : '其他日期';
+                    // Render each week group in order
+                    const sortedKeys = Object.keys(grouped).sort((a, b) => parseInt(a) - parseInt(b));
+                    sortedKeys.forEach(wIdx => {
+                        const group = grouped[wIdx];
+                        const wInfo = group.weekInfo;
+                        const groupLabel = wInfo ? `第 ${wInfo.weekIndex} 週 (${wInfo.startDate} ~ ${wInfo.endDate})` : '其他日期';
 
-                    // Group Header Row
-                    const headerTr = document.createElement('tr');
-                    headerTr.className = 'week-group-header';
-                    headerTr.innerHTML = `
-                        <td colspan="8">
-                            <div class="week-group-title">
-                                <div class="week-group-left">
-                                    <i class="fa-regular fa-calendar-days" style="color:#818cf8;"></i>
-                                    <span>${groupLabel}</span>
+                        // Group Header Row
+                        const headerTr = document.createElement('tr');
+                        headerTr.className = 'week-group-header';
+                        headerTr.innerHTML = `
+                            <td colspan="8">
+                                <div class="week-group-title">
+                                    <div class="week-group-left">
+                                        <i class="fa-regular fa-calendar-days" style="color:#818cf8;"></i>
+                                        <span>${groupLabel}</span>
+                                    </div>
+                                    <div class="week-group-stats">
+                                        <span class="stat-tag"><strong style="color:#fff;">${group.records.length}</strong> 筆加班</span>
+                                        <span class="stat-tag">小計 <strong style="color:#a5b4fc;">${group.totalHours.toFixed(1)} hr</strong> (平日 ${group.weekdayHours.toFixed(1)}h / 假日 ${group.weekendHours.toFixed(1)}h)</span>
+                                    </div>
                                 </div>
-                                <div class="week-group-stats">
-                                    <span class="stat-tag"><strong style="color:#fff;">${group.records.length}</strong> 筆加班</span>
-                                    <span class="stat-tag">小計 <strong style="color:#a5b4fc;">${group.totalHours.toFixed(1)} hr</strong> (平日 ${group.weekdayHours.toFixed(1)}h / 假日 ${group.weekendHours.toFixed(1)}h)</span>
-                                </div>
-                            </div>
-                        </td>
-                    `;
-                    tbody.appendChild(headerTr);
+                            </td>
+                        `;
+                        tbody.appendChild(headerTr);
 
-                    // Render group records
-                    group.records.forEach(r => {
+                        // Render group records
+                        group.records.forEach(r => {
+                            const tr = document.createElement('tr');
+                            const isWe = r.note === '假日加班' || !!r.is_special;
+                            const noteBadge = isWe 
+                                ? `<span class="badge" style="background:rgba(245,158,11,0.2);color:#fcd34d;border:1px solid rgba(245,158,11,0.4)">假日加班</span>` 
+                                : `<span class="badge badge-ot">平日加班</span>`;
+
+                            const ruleWarn = getOtRuleWarning(r.time, r.reason, r.name, r.is_special, r.date);
+                            let timeDisplay = r.time || '-';
+                            if (r.is_special) {
+                                timeDisplay += ` <span class="badge" style="background:rgba(99,102,241,0.2);color:#a5b4fc;border:1px solid rgba(99,102,241,0.4);margin-left:4px;" title="特殊狀況：${r.special_reason || ''}">★ 特殊狀況</span>`;
+                            } else if (ruleWarn) {
+                                timeDisplay += ` <span class="badge" style="background:rgba(239,68,68,0.2);color:#fca5a5;border:1px solid rgba(239,68,68,0.4);margin-left:4px;cursor:pointer;" title="${ruleWarn.msg}">⚠️ ${ruleWarn.expected}</span>`;
+                            }
+
+                            const locBadge = `<span class="badge" style="background:rgba(148,163,184,0.15);color:#cbd5e1;border:1px solid rgba(148,163,184,0.3);">${r.location || '-'}</span>`;
+
+                            const weekdayStr = getChineseWeekday(r.date);
+                            const isDateWeekend = isWeekend(r.date);
+                            const dateTagClass = isDateWeekend ? 'weekday-tag weekend' : 'weekday-tag';
+                            const wBadge = wInfo ? `<span class="badge badge-week">第${wInfo.weekIndex}週</span>` : '';
+
+                            const actionCellHtml = isLockedMonth
+                                ? `<div class="action-cell"><span class="badge" style="background:rgba(148,163,184,0.12);color:#94a3b8;border:1px solid rgba(148,163,184,0.25);font-size:0.75rem;" title="歷史月份已鎖定，僅供檢視"><i class="fa-solid fa-lock"></i> 唯讀</span></div>`
+                                : `<div class="action-cell">
+                                    <button class="action-btn" onclick="openOtEditModal(${r.id})"><i class="fa-solid fa-pen-to-square"></i> 編輯</button>
+                                    <button class="action-btn delete" onclick="deleteOvertime(${r.id})"><i class="fa-solid fa-trash"></i></button>
+                                   </div>`;
+
+                            tr.innerHTML = `
+                                <td>${r.date} <span class="${dateTagClass}">${weekdayStr}</span>${wBadge}</td>
+                                <td>${noteBadge}</td>
+                                <td><strong>${r.name}</strong></td>
+                                <td>${locBadge}</td>
+                                <td>${timeDisplay}</td>
+                                <td><span class="badge badge-ot">${r.hours} hr</span></td>
+                                <td>${r.reason || '-'}</td>
+                                <td>${actionCellHtml}</td>
+                            `;
+                            tbody.appendChild(tr);
+                        });
+                    });
+                } else {
+                    // Flat List view
+                    records.forEach(r => {
                         const tr = document.createElement('tr');
                         const isWe = r.note === '假日加班' || !!r.is_special;
                         const noteBadge = isWe 
@@ -2644,10 +2821,18 @@
 
                         const locBadge = `<span class="badge" style="background:rgba(148,163,184,0.15);color:#cbd5e1;border:1px solid rgba(148,163,184,0.3);">${r.location || '-'}</span>`;
 
+                        const wInfo = getWeekInfoForDate(r.date, monthWeeks);
                         const weekdayStr = getChineseWeekday(r.date);
                         const isDateWeekend = isWeekend(r.date);
                         const dateTagClass = isDateWeekend ? 'weekday-tag weekend' : 'weekday-tag';
                         const wBadge = wInfo ? `<span class="badge badge-week">第${wInfo.weekIndex}週</span>` : '';
+
+                        const actionCellHtml = isLockedMonth
+                            ? `<div class="action-cell"><span class="badge" style="background:rgba(148,163,184,0.12);color:#94a3b8;border:1px solid rgba(148,163,184,0.25);font-size:0.75rem;" title="歷史月份已鎖定，僅供檢視"><i class="fa-solid fa-lock"></i> 唯讀</span></div>`
+                            : `<div class="action-cell">
+                                <button class="action-btn" onclick="openOtEditModal(${r.id})"><i class="fa-solid fa-pen-to-square"></i> 編輯</button>
+                                <button class="action-btn delete" onclick="deleteOvertime(${r.id})"><i class="fa-solid fa-trash"></i></button>
+                               </div>`;
 
                         tr.innerHTML = `
                             <td>${r.date} <span class="${dateTagClass}">${weekdayStr}</span>${wBadge}</td>
@@ -2657,63 +2842,24 @@
                             <td>${timeDisplay}</td>
                             <td><span class="badge badge-ot">${r.hours} hr</span></td>
                             <td>${r.reason || '-'}</td>
-                            <td>
-                                <div class="action-cell">
-                                    <button class="action-btn" onclick="openOtEditModal(${r.id})"><i class="fa-solid fa-pen-to-square"></i> 編輯</button>
-                                    <button class="action-btn delete" onclick="deleteOvertime(${r.id})"><i class="fa-solid fa-trash"></i></button>
-                                </div>
-                            </td>
+                            <td>${actionCellHtml}</td>
                         `;
                         tbody.appendChild(tr);
                     });
-                });
-            } else {
-                // Flat List view
-                records.forEach(r => {
-                    const tr = document.createElement('tr');
-                    const isWe = r.note === '假日加班' || !!r.is_special;
-                    const noteBadge = isWe 
-                        ? `<span class="badge" style="background:rgba(245,158,11,0.2);color:#fcd34d;border:1px solid rgba(245,158,11,0.4)">假日加班</span>` 
-                        : `<span class="badge badge-ot">平日加班</span>`;
-
-                    const ruleWarn = getOtRuleWarning(r.time, r.reason, r.name, r.is_special, r.date);
-                    let timeDisplay = r.time || '-';
-                    if (r.is_special) {
-                        timeDisplay += ` <span class="badge" style="background:rgba(99,102,241,0.2);color:#a5b4fc;border:1px solid rgba(99,102,241,0.4);margin-left:4px;" title="特殊狀況：${r.special_reason || ''}">★ 特殊狀況</span>`;
-                    } else if (ruleWarn) {
-                        timeDisplay += ` <span class="badge" style="background:rgba(239,68,68,0.2);color:#fca5a5;border:1px solid rgba(239,68,68,0.4);margin-left:4px;cursor:pointer;" title="${ruleWarn.msg}">⚠️ ${ruleWarn.expected}</span>`;
-                    }
-
-                    const locBadge = `<span class="badge" style="background:rgba(148,163,184,0.15);color:#cbd5e1;border:1px solid rgba(148,163,184,0.3);">${r.location || '-'}</span>`;
-
-                    const wInfo = getWeekInfoForDate(r.date, monthWeeks);
-                    const weekdayStr = getChineseWeekday(r.date);
-                    const isDateWeekend = isWeekend(r.date);
-                    const dateTagClass = isDateWeekend ? 'weekday-tag weekend' : 'weekday-tag';
-                    const wBadge = wInfo ? `<span class="badge badge-week">第${wInfo.weekIndex}週</span>` : '';
-
-                    tr.innerHTML = `
-                        <td>${r.date} <span class="${dateTagClass}">${weekdayStr}</span>${wBadge}</td>
-                        <td>${noteBadge}</td>
-                        <td><strong>${r.name}</strong></td>
-                        <td>${locBadge}</td>
-                        <td>${timeDisplay}</td>
-                        <td><span class="badge badge-ot">${r.hours} hr</span></td>
-                        <td>${r.reason || '-'}</td>
-                        <td>
-                            <div class="action-cell">
-                                <button class="action-btn" onclick="openOtEditModal(${r.id})"><i class="fa-solid fa-pen-to-square"></i> 編輯</button>
-                                <button class="action-btn delete" onclick="deleteOvertime(${r.id})"><i class="fa-solid fa-trash"></i></button>
-                            </div>
-                        </td>
-                    `;
-                    tbody.appendChild(tr);
-                });
+                }
+            } catch (err) {
+                if (err.name === 'AbortError') return;
+                console.error('loadOvertime error:', err);
             }
         }
 
         // Delete Overtime
         function deleteOvertime(id) {
+            const month = document.getElementById('monthSelect').value;
+            if (isMonthInPast(month)) {
+                alert('🔒 歷史月份已封存鎖定，無法刪除紀錄！');
+                return;
+            }
             ensureAdminUnlocked(async () => {
                 if (!confirm('確定要刪除此筆加班紀錄嗎？')) return;
                 const res = await fetch(`/api/overtime/${id}`, { method: 'DELETE', headers: getAuthHeaders() });
@@ -2745,11 +2891,37 @@
 
         // Load Leaves
         async function loadLeaves() {
+            const currentReqId = ++globalLeaveRequestId;
+            if (leaveAbortController) {
+                try { leaveAbortController.abort(); } catch(e) {}
+            }
+            leaveAbortController = new AbortController();
+            const signal = leaveAbortController.signal;
+
             const month = document.getElementById('monthSelect').value;
+            const isLockedMonth = isMonthInPast(month);
             const parts = month.split('/');
             const yearNum = parseInt(parts[0], 10);
             const monthNum = parseInt(parts[1], 10);
             const monthWeeks = getWeeksInMonth(yearNum, monthNum);
+
+            // Update Add Leave Button state based on month lock
+            const addLeaveBtn = document.getElementById('btnAddLeave');
+            if (addLeaveBtn) {
+                if (isLockedMonth) {
+                    addLeaveBtn.disabled = true;
+                    addLeaveBtn.style.opacity = '0.45';
+                    addLeaveBtn.style.cursor = 'not-allowed';
+                    addLeaveBtn.style.filter = 'grayscale(1)';
+                    addLeaveBtn.setAttribute('title', '🔒 歷史月份已封存鎖定，無法新增請假紀錄');
+                } else {
+                    addLeaveBtn.disabled = false;
+                    addLeaveBtn.style.opacity = '1';
+                    addLeaveBtn.style.cursor = 'pointer';
+                    addLeaveBtn.style.filter = 'none';
+                    addLeaveBtn.removeAttribute('title');
+                }
+            }
 
             const search = document.getElementById('leaveSearch').value;
             const leaveType = document.getElementById('leaveTypeFilter').value;
@@ -2770,61 +2942,127 @@
                 }
             }
 
-            const res = await fetch(queryUrl);
-            const records = await res.json();
+            try {
+                const res = await fetch(queryUrl, { signal });
+                if (currentReqId !== globalLeaveRequestId) return;
+                const records = await res.json();
+                if (currentReqId !== globalLeaveRequestId) return;
 
-            const tbody = document.getElementById('leavesTableBody');
-            tbody.innerHTML = '';
+                const tbody = document.getElementById('leavesTableBody');
+                if (!tbody) return;
+                tbody.innerHTML = '';
 
-            if (records.length === 0) {
-                tbody.innerHTML = `<tr><td colspan="8" style="text-align:center; color:var(--text-muted); padding:1.5rem;">此條件下無請假紀錄</td></tr>`;
-                return;
-            }
+                if (records.length === 0) {
+                    tbody.innerHTML = `<tr><td colspan="8" style="text-align:center; color:var(--text-muted); padding:1.5rem;">此條件下無請假紀錄</td></tr>`;
+                    return;
+                }
 
-            if (isLeaveGroupedByWeek) {
-                // Group records by week
-                const grouped = {};
-                records.forEach(r => {
-                    const wInfo = getWeekInfoForDate(r.date, monthWeeks);
-                    const wIdx = wInfo ? wInfo.weekIndex : 0;
-                    if (!grouped[wIdx]) {
-                        grouped[wIdx] = {
-                            weekInfo: wInfo,
-                            records: [],
-                            compDaysTotal: 0.0
-                        };
-                    }
-                    grouped[wIdx].records.push(r);
-                    grouped[wIdx].compDaysTotal += parseFloat(r.google_comp_days || 0);
-                });
+                if (isLeaveGroupedByWeek) {
+                    // Group records by week
+                    const grouped = {};
+                    records.forEach(r => {
+                        const wInfo = getWeekInfoForDate(r.date, monthWeeks);
+                        const wIdx = wInfo ? wInfo.weekIndex : 0;
+                        if (!grouped[wIdx]) {
+                            grouped[wIdx] = {
+                                weekInfo: wInfo,
+                                records: [],
+                                compDaysTotal: 0.0
+                            };
+                        }
+                        grouped[wIdx].records.push(r);
+                        grouped[wIdx].compDaysTotal += parseFloat(r.google_comp_days || 0);
+                    });
 
-                const sortedKeys = Object.keys(grouped).sort((a, b) => parseInt(a) - parseInt(b));
-                sortedKeys.forEach(wIdx => {
-                    const group = grouped[wIdx];
-                    const wInfo = group.weekInfo;
-                    const groupLabel = wInfo ? `第 ${wInfo.weekIndex} 週 (${wInfo.startDate} ~ ${wInfo.endDate})` : '其他日期';
+                    const sortedKeys = Object.keys(grouped).sort((a, b) => parseInt(a) - parseInt(b));
+                    sortedKeys.forEach(wIdx => {
+                        const group = grouped[wIdx];
+                        const wInfo = group.weekInfo;
+                        const groupLabel = wInfo ? `第 ${wInfo.weekIndex} 週 (${wInfo.startDate} ~ ${wInfo.endDate})` : '其他日期';
 
-                    // Group Header Row
-                    const headerTr = document.createElement('tr');
-                    headerTr.className = 'week-group-header';
-                    headerTr.innerHTML = `
-                        <td colspan="8">
-                            <div class="week-group-title">
-                                <div class="week-group-left">
-                                    <i class="fa-regular fa-calendar-days" style="color:#38bdf8;"></i>
-                                    <span>${groupLabel}</span>
+                        // Group Header Row
+                        const headerTr = document.createElement('tr');
+                        headerTr.className = 'week-group-header';
+                        headerTr.innerHTML = `
+                            <td colspan="8">
+                                <div class="week-group-title">
+                                    <div class="week-group-left">
+                                        <i class="fa-regular fa-calendar-days" style="color:#38bdf8;"></i>
+                                        <span>${groupLabel}</span>
+                                    </div>
+                                    <div class="week-group-stats">
+                                        <span class="stat-tag"><strong style="color:#fff;">${group.records.length}</strong> 筆請假</span>
+                                        <span class="stat-tag">扣補休小計 <strong style="color:#38bdf8;">${group.compDaysTotal.toFixed(1)} 天</strong></span>
+                                    </div>
                                 </div>
-                                <div class="week-group-stats">
-                                    <span class="stat-tag"><strong style="color:#fff;">${group.records.length}</strong> 筆請假</span>
-                                    <span class="stat-tag">扣補休小計 <strong style="color:#38bdf8;">${group.compDaysTotal.toFixed(1)} 天</strong></span>
-                                </div>
-                            </div>
-                        </td>
-                    `;
-                    tbody.appendChild(headerTr);
+                            </td>
+                        `;
+                        tbody.appendChild(headerTr);
 
-                    // Render records
-                    group.records.forEach(r => {
+                        // Render records
+                        group.records.forEach(r => {
+                            const tr = document.createElement('tr');
+                            const badgeClass = getLeaveBadgeClass(r.leave_type);
+                            const isCompLeave = (r.leave_type === '黑假' || r.leave_type === 'WFH');
+                            let statusControlHtml = '<span style="color:var(--text-muted);font-size:0.83rem;">-</span>';
+                            
+                            if (isCompLeave) {
+                                const isDed = (r.is_comp_deducted === undefined || r.is_comp_deducted === null) ? 1 : (r.is_comp_deducted ? 1 : 0);
+                                if (isLockedMonth) {
+                                    const bgStyle = isDed === 1 
+                                        ? 'background:rgba(56,189,248,0.1);color:#7dd3fc;border:1px solid rgba(56,189,248,0.25);' 
+                                        : 'background:rgba(245,158,11,0.12);color:#fcd34d;border:1px solid rgba(245,158,11,0.25);';
+                                    statusControlHtml = `
+                                        <select disabled 
+                                                style="${bgStyle} font-weight: 600; font-size: 0.78rem; padding: 2px 6px; height: 26px; border-radius: 5px; cursor: not-allowed; opacity: 0.65; outline: none;"
+                                                title="🔒 歷史月份已鎖定唯讀，無法修改狀態">
+                                            <option value="1" ${isDed === 1 ? 'selected' : ''} style="background:#1e293b;color:#38bdf8;">✓ 已扣補休</option>
+                                            <option value="0" ${isDed === 0 ? 'selected' : ''} style="background:#1e293b;color:#fcd34d;">⏳ 還沒扣</option>
+                                        </select>
+                                    `;
+                                } else {
+                                    const bgStyle = isDed === 1 
+                                        ? 'background:rgba(56,189,248,0.15);color:#38bdf8;border:1px solid rgba(56,189,248,0.4);' 
+                                        : 'background:rgba(245,158,11,0.18);color:#fcd34d;border:1px solid rgba(245,158,11,0.4);';
+                                    statusControlHtml = `
+                                        <select onchange="changeDeductedStatus(${r.id}, this)" 
+                                                style="${bgStyle} font-weight: 600; font-size: 0.78rem; padding: 2px 6px; height: 26px; border-radius: 5px; cursor: pointer; outline: none; transition: all 0.15s ease;"
+                                                title="選擇扣除狀態">
+                                            <option value="1" ${isDed === 1 ? 'selected' : ''} style="background:#1e293b;color:#38bdf8;">✓ 已扣補休</option>
+                                            <option value="0" ${isDed === 0 ? 'selected' : ''} style="background:#1e293b;color:#fcd34d;">⏳ 還沒扣</option>
+                                        </select>
+                                    `;
+                                }
+                            }
+
+                            const weekdayStr = getChineseWeekday(r.date);
+                            const isDateWeekend = isWeekend(r.date);
+                            const dateTagClass = isDateWeekend ? 'weekday-tag weekend' : 'weekday-tag';
+                            const wBadge = wInfo ? `<span class="badge badge-week" style="background:rgba(6,182,212,0.15);color:#67e8f9;border-color:rgba(6,182,212,0.35);">第${wInfo.weekIndex}週</span>` : '';
+
+                            const actionCellHtml = isLockedMonth
+                                ? `<div class="action-cell"><span class="badge" style="background:rgba(148,163,184,0.12);color:#94a3b8;border:1px solid rgba(148,163,184,0.25);font-size:0.75rem;" title="歷史月份已鎖定，僅供檢視"><i class="fa-solid fa-lock"></i> 唯讀</span></div>`
+                                : `<div class="action-cell">
+                                    <button class="action-btn" onclick="openLeaveEditModal(${r.id})"><i class="fa-solid fa-pen-to-square"></i> 編輯</button>
+                                    <button class="action-btn delete" onclick="deleteLeave(${r.id})"><i class="fa-solid fa-trash"></i></button>
+                                   </div>`;
+
+                            tr.innerHTML = `
+                                <td>${r.date} <span class="${dateTagClass}">${weekdayStr}</span>${wBadge}</td>
+                                <td><strong>${r.name}</strong></td>
+                                <td><span class="badge ${badgeClass}">${r.leave_type}</span></td>
+                                <td>${r.duration}</td>
+                                <td>${r.google_comp_days > 0 ? `${r.google_comp_days} 天` : '-'}</td>
+                                <td>${r.reason || '-'}</td>
+                                <td>${statusControlHtml}</td>
+                                <td>${actionCellHtml}</td>
+                            `;
+                            tbody.appendChild(tr);
+                        });
+                    });
+                } else {
+                    // Flat list view
+                    records.forEach(r => {
                         const tr = document.createElement('tr');
                         const badgeClass = getLeaveBadgeClass(r.leave_type);
                         const isCompLeave = (r.leave_type === '黑假' || r.leave_type === 'WFH');
@@ -2832,24 +3070,45 @@
                         
                         if (isCompLeave) {
                             const isDed = (r.is_comp_deducted === undefined || r.is_comp_deducted === null) ? 1 : (r.is_comp_deducted ? 1 : 0);
-                            const bgStyle = isDed === 1 
-                                ? 'background:rgba(56,189,248,0.15);color:#38bdf8;border:1px solid rgba(56,189,248,0.4);' 
-                                : 'background:rgba(245,158,11,0.18);color:#fcd34d;border:1px solid rgba(245,158,11,0.4);';
-
-                            statusControlHtml = `
-                                <select onchange="changeDeductedStatus(${r.id}, this)" 
-                                        style="${bgStyle} font-weight: 600; font-size: 0.78rem; padding: 2px 6px; height: 26px; border-radius: 5px; cursor: pointer; outline: none; transition: all 0.15s ease;"
-                                        title="選擇扣除狀態">
-                                    <option value="1" ${isDed === 1 ? 'selected' : ''} style="background:#1e293b;color:#38bdf8;">✓ 已扣補休</option>
-                                    <option value="0" ${isDed === 0 ? 'selected' : ''} style="background:#1e293b;color:#fcd34d;">⏳ 還沒扣</option>
-                                </select>
-                            `;
+                            if (isLockedMonth) {
+                                const bgStyle = isDed === 1 
+                                    ? 'background:rgba(56,189,248,0.1);color:#7dd3fc;border:1px solid rgba(56,189,248,0.25);' 
+                                    : 'background:rgba(245,158,11,0.12);color:#fcd34d;border:1px solid rgba(245,158,11,0.25);';
+                                statusControlHtml = `
+                                    <select disabled 
+                                            style="${bgStyle} font-weight: 600; font-size: 0.78rem; padding: 2px 6px; height: 26px; border-radius: 5px; cursor: not-allowed; opacity: 0.65; outline: none;"
+                                            title="🔒 歷史月份已鎖定唯讀，無法修改狀態">
+                                        <option value="1" ${isDed === 1 ? 'selected' : ''} style="background:#1e293b;color:#38bdf8;">✓ 已扣補休</option>
+                                        <option value="0" ${isDed === 0 ? 'selected' : ''} style="background:#1e293b;color:#fcd34d;">⏳ 還沒扣</option>
+                                    </select>
+                                `;
+                            } else {
+                                const bgStyle = isDed === 1 
+                                    ? 'background:rgba(56,189,248,0.15);color:#38bdf8;border:1px solid rgba(56,189,248,0.4);' 
+                                    : 'background:rgba(245,158,11,0.18);color:#fcd34d;border:1px solid rgba(245,158,11,0.4);';
+                                statusControlHtml = `
+                                    <select onchange="changeDeductedStatus(${r.id}, this)" 
+                                            style="${bgStyle} font-weight: 600; font-size: 0.78rem; padding: 2px 6px; height: 26px; border-radius: 5px; cursor: pointer; outline: none; transition: all 0.15s ease;"
+                                            title="選擇扣除狀態">
+                                        <option value="1" ${isDed === 1 ? 'selected' : ''} style="background:#1e293b;color:#38bdf8;">✓ 已扣補休</option>
+                                        <option value="0" ${isDed === 0 ? 'selected' : ''} style="background:#1e293b;color:#fcd34d;">⏳ 還沒扣</option>
+                                    </select>
+                                `;
+                            }
                         }
 
+                        const wInfo = getWeekInfoForDate(r.date, monthWeeks);
                         const weekdayStr = getChineseWeekday(r.date);
                         const isDateWeekend = isWeekend(r.date);
                         const dateTagClass = isDateWeekend ? 'weekday-tag weekend' : 'weekday-tag';
                         const wBadge = wInfo ? `<span class="badge badge-week" style="background:rgba(6,182,212,0.15);color:#67e8f9;border-color:rgba(6,182,212,0.35);">第${wInfo.weekIndex}週</span>` : '';
+
+                        const actionCellHtml = isLockedMonth
+                            ? `<div class="action-cell"><span class="badge" style="background:rgba(148,163,184,0.12);color:#94a3b8;border:1px solid rgba(148,163,184,0.25);font-size:0.75rem;" title="歷史月份已鎖定，僅供檢視"><i class="fa-solid fa-lock"></i> 唯讀</span></div>`
+                            : `<div class="action-cell">
+                                <button class="action-btn" onclick="openLeaveEditModal(${r.id})"><i class="fa-solid fa-pen-to-square"></i> 編輯</button>
+                                <button class="action-btn delete" onclick="deleteLeave(${r.id})"><i class="fa-solid fa-trash"></i></button>
+                               </div>`;
 
                         tr.innerHTML = `
                             <td>${r.date} <span class="${dateTagClass}">${weekdayStr}</span>${wBadge}</td>
@@ -2859,68 +3118,25 @@
                             <td>${r.google_comp_days > 0 ? `${r.google_comp_days} 天` : '-'}</td>
                             <td>${r.reason || '-'}</td>
                             <td>${statusControlHtml}</td>
-                            <td>
-                                <div class="action-cell">
-                                    <button class="action-btn" onclick="openLeaveEditModal(${r.id})"><i class="fa-solid fa-pen-to-square"></i> 編輯</button>
-                                    <button class="action-btn delete" onclick="deleteLeave(${r.id})"><i class="fa-solid fa-trash"></i></button>
-                                </div>
-                            </td>
+                            <td>${actionCellHtml}</td>
                         `;
                         tbody.appendChild(tr);
                     });
-                });
-            } else {
-                // Flat list view
-                records.forEach(r => {
-                    const tr = document.createElement('tr');
-                    const badgeClass = getLeaveBadgeClass(r.leave_type);
-                    const isCompLeave = (r.leave_type === '黑假' || r.leave_type === 'WFH');
-                    let statusControlHtml = '<span style="color:var(--text-muted);font-size:0.83rem;">-</span>';
-                    
-                    if (isCompLeave) {
-                        const isDed = (r.is_comp_deducted === undefined || r.is_comp_deducted === null) ? 1 : (r.is_comp_deducted ? 1 : 0);
-                        const bgStyle = isDed === 1 
-                            ? 'background:rgba(56,189,248,0.15);color:#38bdf8;border:1px solid rgba(56,189,248,0.4);' 
-                            : 'background:rgba(245,158,11,0.18);color:#fcd34d;border:1px solid rgba(245,158,11,0.4);';
-
-                        statusControlHtml = `
-                            <select onchange="changeDeductedStatus(${r.id}, this)" 
-                                    style="${bgStyle} font-weight: 600; font-size: 0.78rem; padding: 2px 6px; height: 26px; border-radius: 5px; cursor: pointer; outline: none; transition: all 0.15s ease;"
-                                    title="選擇扣除狀態">
-                                <option value="1" ${isDed === 1 ? 'selected' : ''} style="background:#1e293b;color:#38bdf8;">✓ 已扣補休</option>
-                                <option value="0" ${isDed === 0 ? 'selected' : ''} style="background:#1e293b;color:#fcd34d;">⏳ 還沒扣</option>
-                            </select>
-                        `;
-                    }
-
-                    const wInfo = getWeekInfoForDate(r.date, monthWeeks);
-                    const weekdayStr = getChineseWeekday(r.date);
-                    const isDateWeekend = isWeekend(r.date);
-                    const dateTagClass = isDateWeekend ? 'weekday-tag weekend' : 'weekday-tag';
-                    const wBadge = wInfo ? `<span class="badge badge-week" style="background:rgba(6,182,212,0.15);color:#67e8f9;border-color:rgba(6,182,212,0.35);">第${wInfo.weekIndex}週</span>` : '';
-
-                    tr.innerHTML = `
-                        <td>${r.date} <span class="${dateTagClass}">${weekdayStr}</span>${wBadge}</td>
-                        <td><strong>${r.name}</strong></td>
-                        <td><span class="badge ${badgeClass}">${r.leave_type}</span></td>
-                        <td>${r.duration}</td>
-                        <td>${r.google_comp_days > 0 ? `${r.google_comp_days} 天` : '-'}</td>
-                        <td>${r.reason || '-'}</td>
-                        <td>${statusControlHtml}</td>
-                        <td>
-                            <div class="action-cell">
-                                <button class="action-btn" onclick="openLeaveEditModal(${r.id})"><i class="fa-solid fa-pen-to-square"></i> 編輯</button>
-                                <button class="action-btn delete" onclick="deleteLeave(${r.id})"><i class="fa-solid fa-trash"></i></button>
-                            </div>
-                        </td>
-                    `;
-                    tbody.appendChild(tr);
-                });
+                }
+            } catch (err) {
+                if (err.name === 'AbortError') return;
+                console.error('loadLeaves error:', err);
             }
         }
 
         // Change Deducted Status with Optimistic UI Update (Zero Latency)
         function changeDeductedStatus(id, selectEl) {
+            const month = document.getElementById('monthSelect').value;
+            if (isMonthInPast(month)) {
+                alert('🔒 歷史月份已封存鎖定，無法修改扣補休狀態！');
+                loadLeaves();
+                return;
+            }
             ensureAdminUnlocked(async () => {
                 const val = parseInt(selectEl.value);
                 // Optimistic visual feedback immediately
@@ -2958,6 +3174,11 @@
 
         // Delete Leave
         function deleteLeave(id) {
+            const month = document.getElementById('monthSelect').value;
+            if (isMonthInPast(month)) {
+                alert('🔒 歷史月份已封存鎖定，無法刪除紀錄！');
+                return;
+            }
             ensureAdminUnlocked(async () => {
                 if (!confirm('確定要刪除此筆請假紀錄嗎？')) return;
                 const res = await fetch(`/api/leaves/${id}`, { method: 'DELETE', headers: getAuthHeaders() });
@@ -3249,9 +3470,13 @@
 
         // Show Add Overtime Modal
         function showAddOtModal() {
+            const ym = document.getElementById('monthSelect').value;
+            if (isMonthInPast(ym)) {
+                alert(`🔒 月份 [${ym}] 為歷史月份，已封存為唯讀狀態，無法新增加班紀錄！\n如需新增紀錄，請切換至當前或未來月份。`);
+                return;
+            }
             ensureAdminUnlocked(() => {
                 const today = new Date();
-                const ym = document.getElementById('monthSelect').value || `${today.getFullYear()}/${String(today.getMonth() + 1).padStart(2, '0')}`;
                 const defaultDate = `${ym}/01`;
 
                 editingRecordState = { type: 'add_ot', index: null };
@@ -3359,10 +3584,14 @@
 
         // Show Add Leave Modal
         function showAddLeaveModal() {
+            const ym = document.getElementById('monthSelect').value;
+            if (isMonthInPast(ym)) {
+                alert(`🔒 月份 [${ym}] 為歷史月份，已封存為唯讀狀態，無法新增請假紀錄！\n如需新增紀錄，請切換至當前或未來月份。`);
+                return;
+            }
             ensureAdminUnlocked(async () => {
                 await refreshMemberLocationMap();
                 const today = new Date();
-                const ym = document.getElementById('monthSelect').value || `${today.getFullYear()}/${String(today.getMonth() + 1).padStart(2, '0')}`;
                 
                 const todayYm = `${today.getFullYear()}/${String(today.getMonth() + 1).padStart(2, '0')}`;
                 let defaultDate = '';
@@ -3414,9 +3643,19 @@
 
         // Open OT Edit Modal for saved DB records
         function openOtEditModal(recId) {
+            const month = document.getElementById('monthSelect').value;
+            if (isMonthInPast(month)) {
+                alert('🔒 歷史月份已封存鎖定，無法編輯紀錄！');
+                return;
+            }
             ensureAdminUnlocked(async () => {
                 const res = await fetch(`/api/overtime/${recId}`);
                 const r = await res.json();
+
+                if (isDateInPastMonth(r.date)) {
+                    alert(`🔒 此筆加班紀錄日期 [${r.date}] 屬於已封存之歷史月份，無法編輯！`);
+                    return;
+                }
 
                 editingRecordState = { type: 'edit_ot_db', id: recId };
                 document.getElementById('modalTitleText').innerHTML = `<i class="fa-solid fa-pen-to-square" style="color: var(--primary);"></i> 編輯加班紀錄`;
@@ -3445,10 +3684,20 @@
 
         // Open Leave Edit Modal for saved DB records
         function openLeaveEditModal(recId) {
+            const month = document.getElementById('monthSelect').value;
+            if (isMonthInPast(month)) {
+                alert('🔒 歷史月份已封存鎖定，無法編輯紀錄！');
+                return;
+            }
             ensureAdminUnlocked(async () => {
                 await refreshMemberLocationMap();
                 const res = await fetch(`/api/leaves/${recId}`);
                 const r = await res.json();
+
+                if (isDateInPastMonth(r.date)) {
+                    alert(`🔒 此筆請假紀錄日期 [${r.date}] 屬於已封存之歷史月份，無法編輯！`);
+                    return;
+                }
 
                 editingRecordState = { type: 'edit_leave_db', id: recId };
                 document.getElementById('modalTitleText').innerHTML = `<i class="fa-solid fa-pen-to-square" style="color: var(--primary);"></i> 編輯請假紀錄`;
@@ -3493,6 +3742,11 @@
 
             if (!date || !name) {
                 alert('請填寫日期與姓名！');
+                return;
+            }
+
+            if (isDateInPastMonth(date)) {
+                alert(`🔒 日期 [${date}] 屬於已封存之歷史月份，無法建立或修改此月份紀錄！`);
                 return;
             }
 
@@ -3649,6 +3903,15 @@
                     return;
                 }
 
+                // Check if any record is in past months
+                const allRecs = [...(currentParsedData.overtime_records || []), ...(currentParsedData.leave_records || [])];
+                const pastRecs = allRecs.filter(r => isDateInPastMonth(r.date));
+                if (pastRecs.length > 0) {
+                    const pastSample = pastRecs[0];
+                    const proceed = confirm(`⚠️ 提示：待匯入資料中有 ${pastRecs.length} 筆資料屬於歷史月份 (例如: ${pastSample.date} ${pastSample.name})。\n確定仍要匯入至歷史月份嗎？`);
+                    if (!proceed) return;
+                }
+
                 try {
                     const res = await fetch('/api/confirm_import', {
                         method: 'POST',
@@ -3693,42 +3956,54 @@
         let currentAswExportData = null;
 
         async function openAswExportModal() {
+            if (aswExportAbortController) {
+                try { aswExportAbortController.abort(); } catch(e) {}
+            }
+            aswExportAbortController = new AbortController();
+            const signal = aswExportAbortController.signal;
+
             const month = document.getElementById('monthSelect').value;
-            const res = await fetch(`/api/asw_export?month=${encodeURIComponent(month)}`);
-            currentAswExportData = await res.json();
+            try {
+                const res = await fetch(`/api/asw_export?month=${encodeURIComponent(month)}`, { signal });
+                currentAswExportData = await res.json();
 
-            document.getElementById('aswModalTitle').textContent = currentAswExportData.title || 'ASW 加班補休時數管控表';
-            
-            const tbody = document.getElementById('aswModalTbody');
-            tbody.innerHTML = '';
-
-            const rows = currentAswExportData.rows || [];
-            rows.forEach(r => {
-                const tr = document.createElement('tr');
-                tr.style.borderBottom = '1px solid rgba(255,255,255,0.05)';
+                document.getElementById('aswModalTitle').textContent = currentAswExportData.title || 'ASW 加班補休時數管控表';
                 
-                if (r.is_empty) {
-                    tr.innerHTML = `<td colspan="7" style="height: 14px;"></td>`;
-                } else {
-                    const isWeekend = r.note === '假日加班';
-                    const noteBadge = isWeekend 
-                        ? `<span class="badge" style="background:rgba(245,158,11,0.2);color:#fcd34d;border:1px solid rgba(245,158,11,0.4)">假日加班</span>` 
-                        : `<span class="badge badge-ot">平日加班</span>`;
+                const tbody = document.getElementById('aswModalTbody');
+                if (!tbody) return;
+                tbody.innerHTML = '';
 
-                    tr.innerHTML = `
-                        <td style="padding: 6px 10px;">${r.date || ''}</td>
-                        <td style="padding: 6px 10px;"><strong>${r.name || ''}</strong></td>
-                        <td style="padding: 6px 10px;">${r.time || ''}</td>
-                        <td style="padding: 6px 10px;">${r.hours !== undefined ? r.hours : ''}</td>
-                        <td style="padding: 6px 10px;">${r.reason || ''}</td>
-                        <td style="padding: 6px 10px;">${noteBadge}</td>
-                        <td style="padding: 6px 10px;"><strong>${r.eval_hours !== undefined ? r.eval_hours : ''}</strong></td>
-                    `;
-                }
-                tbody.appendChild(tr);
-            });
+                const rows = currentAswExportData.rows || [];
+                rows.forEach(r => {
+                    const tr = document.createElement('tr');
+                    tr.style.borderBottom = '1px solid rgba(255,255,255,0.05)';
+                    
+                    if (r.is_empty) {
+                        tr.innerHTML = `<td colspan="7" style="height: 14px;"></td>`;
+                    } else {
+                        const isWeekend = r.note === '假日加班';
+                        const noteBadge = isWeekend 
+                            ? `<span class="badge" style="background:rgba(245,158,11,0.2);color:#fcd34d;border:1px solid rgba(245,158,11,0.4)">假日加班</span>` 
+                            : `<span class="badge badge-ot">平日加班</span>`;
 
-            document.getElementById('aswExportModal').classList.add('show');
+                        tr.innerHTML = `
+                            <td style="padding: 6px 10px;">${r.date || ''}</td>
+                            <td style="padding: 6px 10px;"><strong>${r.name || ''}</strong></td>
+                            <td style="padding: 6px 10px;">${r.time || ''}</td>
+                            <td style="padding: 6px 10px;">${r.hours !== undefined ? r.hours : ''}</td>
+                            <td style="padding: 6px 10px;">${r.reason || ''}</td>
+                            <td style="padding: 6px 10px;">${noteBadge}</td>
+                            <td style="padding: 6px 10px;"><strong>${r.eval_hours !== undefined ? r.eval_hours : ''}</strong></td>
+                        `;
+                    }
+                    tbody.appendChild(tr);
+                });
+
+                document.getElementById('aswExportModal').classList.add('show');
+            } catch (err) {
+                if (err.name === 'AbortError') return;
+                console.error('openAswExportModal error:', err);
+            }
         }
 
         function closeAswModal() {
@@ -3780,111 +4055,140 @@
 
         // Load Members & Location Histories
         async function loadMembers() {
-            const res = await fetch('/api/members');
-            const members = await res.json();
+            const currentReqId = ++globalMembersRequestId;
+            if (membersAbortController) {
+                try { membersAbortController.abort(); } catch(e) {}
+            }
+            membersAbortController = new AbortController();
+            const signal = membersAbortController.signal;
 
-            const tbody = document.getElementById('membersTableBody');
-            tbody.innerHTML = '';
+            try {
+                const res = await fetch('/api/members', { signal });
+                if (currentReqId !== globalMembersRequestId) return;
+                const members = await res.json();
+                if (currentReqId !== globalMembersRequestId) return;
 
-            const histSelect = document.getElementById('histMemberName');
-            if (histSelect) histSelect.innerHTML = '';
+                const tbody = document.getElementById('membersTableBody');
+                if (!tbody) return;
+                tbody.innerHTML = '';
 
-            memberLocationMap = {};
-            memberQuotaMap = {};
+                const histSelect = document.getElementById('histMemberName');
+                if (histSelect) histSelect.innerHTML = '';
 
-            members.forEach(m => {
-                const loc = m.location || '台灣辦公室';
-                const quota = m.google_comp_quota || 0.0;
-                const used = m.google_comp_used || 0.0;
-                const remaining = m.google_comp_remaining !== undefined ? m.google_comp_remaining : (quota - used);
+                memberLocationMap = {};
+                memberQuotaMap = {};
 
-                memberLocationMap[m.name] = loc;
-                memberQuotaMap[m.name] = { quota, used, remaining };
+                members.forEach(m => {
+                    const loc = m.location || '台灣辦公室';
+                    const quota = m.google_comp_quota || 0.0;
+                    const used = m.google_comp_used || 0.0;
+                    const remaining = m.google_comp_remaining !== undefined ? m.google_comp_remaining : (quota - used);
 
-                if (histSelect) {
-                    const opt = document.createElement('option');
-                    opt.value = m.name;
-                    opt.textContent = m.name;
-                    histSelect.appendChild(opt);
-                }
+                    memberLocationMap[m.name] = loc;
+                    memberQuotaMap[m.name] = { quota, used, remaining };
 
-                const isFactory = factoryLocationsList.includes(loc);
-                const classBadge = isFactory 
-                    ? `<span class="badge" style="background:rgba(245,158,11,0.2);color:#fcd34d;border:1px solid rgba(245,158,11,0.4)"><i class="fa-solid fa-industry"></i> 工廠 (19:00加班)</span>`
-                    : `<span class="badge badge-ot"><i class="fa-solid fa-building"></i> 非工廠 (20:00加班)</span>`;
+                    if (histSelect) {
+                        const opt = document.createElement('option');
+                        opt.value = m.name;
+                        opt.textContent = m.name;
+                        histSelect.appendChild(opt);
+                    }
 
-                const remainingBadge = remaining > 0
-                    ? `<span class="badge" style="background:rgba(56,189,248,0.15);color:#38bdf8;border:1px solid rgba(56,189,248,0.35);"><i class="fa-solid fa-clock"></i> 剩 ${remaining} 天</span>`
-                    : `<span class="badge" style="background:rgba(239,68,68,0.15);color:#fca5a5;border:1px solid rgba(239,68,68,0.35);"><i class="fa-solid fa-triangle-exclamation"></i> 剩 ${remaining} 天</span>`;
+                    const isFactory = factoryLocationsList.includes(loc);
+                    const classBadge = isFactory 
+                        ? `<span class="badge" style="background:rgba(245,158,11,0.2);color:#fcd34d;border:1px solid rgba(245,158,11,0.4)"><i class="fa-solid fa-industry"></i> 工廠 (19:00加班)</span>`
+                        : `<span class="badge badge-ot"><i class="fa-solid fa-building"></i> 非工廠 (20:00加班)</span>`;
 
-                const optHtml = locationOptions.map(o => 
-                    `<option value="${o}" ${o === loc ? 'selected' : ''}>${o}</option>`
-                ).join('');
+                    const remainingBadge = remaining > 0
+                        ? `<span class="badge" style="background:rgba(56,189,248,0.15);color:#38bdf8;border:1px solid rgba(56,189,248,0.35);"><i class="fa-solid fa-clock"></i> 剩 ${remaining} 天</span>`
+                        : `<span class="badge" style="background:rgba(239,68,68,0.15);color:#fca5a5;border:1px solid rgba(239,68,68,0.35);"><i class="fa-solid fa-triangle-exclamation"></i> 剩 ${remaining} 天</span>`;
 
-                const tr = document.createElement('tr');
-                tr.innerHTML = `
-                    <td><strong>${m.name}</strong></td>
-                    <td>
-                        <select onchange="updateMemberLocation(${m.id}, this.value)" style="padding: 4px 6px; font-size: 0.83rem; width: 100%;">
-                            ${optHtml}
-                        </select>
-                    </td>
-                    <td>
-                        <div style="display:flex; align-items:center; gap:4px;">
-                            <input type="number" step="any" value="${quota}" onchange="updateMemberQuota(${m.id}, this.value)" style="width: 90px; padding: 3px 6px; font-size: 0.83rem;" title="雙擊或輸入數字修改總額度">
-                            <span style="font-size:0.8rem; color:var(--text-muted);">天</span>
-                        </div>
-                    </td>
-                    <td>${used} 天</td>
-                    <td>${classBadge}</td>
-                    <td>
-                        <div class="action-cell">
-                            <button class="action-btn delete" onclick="deleteMember(${m.id})"><i class="fa-solid fa-trash"></i> 刪除</button>
-                        </div>
-                    </td>
-                `;
-                tbody.appendChild(tr);
-            });
+                    const optHtml = locationOptions.map(o => 
+                        `<option value="${o}" ${o === loc ? 'selected' : ''}>${o}</option>`
+                    ).join('');
 
-            await loadLocationHistories();
+                    const tr = document.createElement('tr');
+                    tr.innerHTML = `
+                        <td><strong>${m.name}</strong></td>
+                        <td>
+                            <select onchange="updateMemberLocation(${m.id}, this.value)" style="padding: 4px 6px; font-size: 0.83rem; width: 100%;">
+                                ${optHtml}
+                            </select>
+                        </td>
+                        <td>
+                            <div style="display:flex; align-items:center; gap:4px;">
+                                <input type="number" step="any" value="${quota}" onchange="updateMemberQuota(${m.id}, this.value)" style="width: 90px; padding: 3px 6px; font-size: 0.83rem;" title="雙擊或輸入數字修改總額度">
+                                <span style="font-size:0.8rem; color:var(--text-muted);">天</span>
+                            </div>
+                        </td>
+                        <td>${used} 天</td>
+                        <td>${classBadge}</td>
+                        <td>
+                            <div class="action-cell">
+                                <button class="action-btn delete" onclick="deleteMember(${m.id})"><i class="fa-solid fa-trash"></i> 刪除</button>
+                            </div>
+                        </td>
+                    `;
+                    tbody.appendChild(tr);
+                });
+
+                await loadLocationHistories();
+            } catch (err) {
+                if (err.name === 'AbortError') return;
+                console.error('loadMembers error:', err);
+            }
         }
 
         // Load Location Histories
         async function loadLocationHistories() {
-            const res = await fetch('/api/members/locations');
-            const list = await res.json();
-
-            const tbody = document.getElementById('locationHistoryTableBody');
-            if (!tbody) return;
-            tbody.innerHTML = '';
-
-            if (list.length === 0) {
-                tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;color:var(--text-muted);padding:1rem;">尚無駐點區間履歷（預設依上方各成員目前設定之地點為準）</td></tr>`;
-                return;
+            const currentReqId = ++globalHistRequestId;
+            if (histAbortController) {
+                try { histAbortController.abort(); } catch(e) {}
             }
+            histAbortController = new AbortController();
+            const signal = histAbortController.signal;
 
-            list.forEach(h => {
-                const tr = document.createElement('tr');
-                const isFactory = factoryLocationsList.includes(h.location);
-                const classBadge = isFactory 
-                    ? `<span class="badge" style="background:rgba(245,158,11,0.2);color:#fcd34d;border:1px solid rgba(245,158,11,0.4)">工廠 (19:00起)</span>` 
-                    : `<span class="badge badge-ot">非工廠 (20:00起)</span>`;
+            try {
+                const res = await fetch('/api/members/locations', { signal });
+                if (currentReqId !== globalHistRequestId) return;
+                const list = await res.json();
+                if (currentReqId !== globalHistRequestId) return;
 
-                tr.innerHTML = `
-                    <td><strong>${h.name}</strong></td>
-                    <td>${h.start_date}</td>
-                    <td>${h.end_date || '<span style="color:#86efac;">至今 (未設定結束)</span>'}</td>
-                    <td><span class="badge" style="background:rgba(148,163,184,0.15);color:#cbd5e1;border:1px solid rgba(148,163,184,0.3);">${h.location}</span></td>
-                    <td>${classBadge}</td>
-                    <td>
-                        <div class="action-cell">
-                            <button class="action-btn" onclick="openLocationHistEditModal(${h.id})"><i class="fa-solid fa-pen-to-square"></i> 編輯</button>
-                            <button class="action-btn delete" onclick="deleteLocationHistory(${h.id})"><i class="fa-solid fa-trash"></i> 刪除</button>
-                        </div>
-                    </td>
-                `;
-                tbody.appendChild(tr);
-            });
+                const tbody = document.getElementById('locationHistoryTableBody');
+                if (!tbody) return;
+                tbody.innerHTML = '';
+
+                if (list.length === 0) {
+                    tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;color:var(--text-muted);padding:1rem;">尚無駐點區間履歷（預設依上方各成員目前設定之地點為準）</td></tr>`;
+                    return;
+                }
+
+                list.forEach(h => {
+                    const tr = document.createElement('tr');
+                    const isFactory = factoryLocationsList.includes(h.location);
+                    const classBadge = isFactory 
+                        ? `<span class="badge" style="background:rgba(245,158,11,0.2);color:#fcd34d;border:1px solid rgba(245,158,11,0.4)">工廠 (19:00起)</span>` 
+                        : `<span class="badge badge-ot">非工廠 (20:00起)</span>`;
+
+                    tr.innerHTML = `
+                        <td><strong>${h.name}</strong></td>
+                        <td>${h.start_date}</td>
+                        <td>${h.end_date || '<span style="color:#86efac;">至今 (未設定結束)</span>'}</td>
+                        <td><span class="badge" style="background:rgba(148,163,184,0.15);color:#cbd5e1;border:1px solid rgba(148,163,184,0.3);">${h.location}</span></td>
+                        <td>${classBadge}</td>
+                        <td>
+                            <div class="action-cell">
+                                <button class="action-btn" onclick="openLocationHistEditModal(${h.id})"><i class="fa-solid fa-pen-to-square"></i> 編輯</button>
+                                <button class="action-btn delete" onclick="deleteLocationHistory(${h.id})"><i class="fa-solid fa-trash"></i> 刪除</button>
+                            </div>
+                        </td>
+                    `;
+                    tbody.appendChild(tr);
+                });
+            } catch (err) {
+                if (err.name === 'AbortError') return;
+                console.error('loadLocationHistories error:', err);
+            }
         }
 
         function openLocationHistEditModal(id) {
