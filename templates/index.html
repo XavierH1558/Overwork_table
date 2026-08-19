@@ -1284,7 +1284,7 @@
                     </div>
                 </div>
                 <p style="font-size: 0.88rem; color: var(--text-muted);">
-                    在此維護團隊成員預設預設地點與 Google 補休總額度。成員的「目前工作地點」會動態優先比對下方的「動態駐點履歷」，若無設定履歷則預設為「台灣辦公室」（或手動預設地點）。
+                    在此維護團隊成員名單與 Google 補休總額度。成員的「目前工作地點」會依據今日日期<b>自動比對下方的動態駐點履歷</b>（出差中自動顯示 ✈️ 駐點名稱，結束出差則自動恢復為 🏠 台灣辦公室）。
                 </p>
                 <div class="table-responsive">
                     <table>
@@ -4233,6 +4233,15 @@
                 if (!tbody) return;
                 tbody.innerHTML = '';
 
+                const hRes = await fetch('/api/members/locations');
+                locationHistoriesCache = await hRes.json();
+
+                const dNow = new Date();
+                const yNow = dNow.getFullYear();
+                const mNow = String(dNow.getMonth() + 1).padStart(2, '0');
+                const dayNow = String(dNow.getDate()).padStart(2, '0');
+                const todayClean = `${yNow}/${mNow}/${dayNow}`;
+
                 const histSelect = document.getElementById('histMemberName');
                 if (histSelect) histSelect.innerHTML = '';
 
@@ -4240,12 +4249,32 @@
                 memberQuotaMap = {};
 
                 members.forEach(m => {
-                    const loc = m.location || '台灣辦公室';
+                    const baseLoc = m.location || '台灣辦公室';
                     const quota = m.google_comp_quota || 0.0;
                     const used = m.google_comp_used || 0.0;
                     const remaining = m.google_comp_remaining !== undefined ? m.google_comp_remaining : (quota - used);
 
-                    memberLocationMap[m.name] = loc;
+                    // Dynamically determine today's active location from history
+                    let activeLoc = baseLoc;
+                    let isTraveling = false;
+                    let tripInfo = '';
+
+                    if (locationHistoriesCache && locationHistoriesCache.length > 0) {
+                        const matching = locationHistoriesCache.filter(h => {
+                            if (h.name.toLowerCase() !== m.name.toLowerCase()) return false;
+                            const hStart = normDate(h.start_date);
+                            const hEnd = normDate(h.end_date);
+                            return hStart <= todayClean && (!hEnd || hEnd >= todayClean);
+                        });
+                        if (matching.length > 0) {
+                            matching.sort((a, b) => normDate(b.start_date).localeCompare(normDate(a.start_date)));
+                            activeLoc = matching[0].location;
+                            isTraveling = true;
+                            tripInfo = `${matching[0].start_date} ~ ${matching[0].end_date || '至今'}`;
+                        }
+                    }
+
+                    memberLocationMap[m.name] = activeLoc;
                     memberQuotaMap[m.name] = { quota, used, remaining };
 
                     if (histSelect) {
@@ -4255,27 +4284,19 @@
                         histSelect.appendChild(opt);
                     }
 
-                    const isFactory = factoryLocationsList.includes(loc);
+                    const isFactory = factoryLocationsList.includes(activeLoc);
                     const classBadge = isFactory 
                         ? `<span class="badge" style="background:rgba(245,158,11,0.2);color:#fcd34d;border:1px solid rgba(245,158,11,0.4)"><i class="fa-solid fa-industry"></i> 工廠 (19:00加班)</span>`
                         : `<span class="badge badge-ot"><i class="fa-solid fa-building"></i> 非工廠 (20:00加班)</span>`;
 
-                    const remainingBadge = remaining > 0
-                        ? `<span class="badge" style="background:rgba(56,189,248,0.15);color:#38bdf8;border:1px solid rgba(56,189,248,0.35);"><i class="fa-solid fa-clock"></i> 剩 ${remaining} 天</span>`
-                        : `<span class="badge" style="background:rgba(239,68,68,0.15);color:#fca5a5;border:1px solid rgba(239,68,68,0.35);"><i class="fa-solid fa-triangle-exclamation"></i> 剩 ${remaining} 天</span>`;
-
-                    const optHtml = locationOptions.map(o => 
-                        `<option value="${o}" ${o === loc ? 'selected' : ''}>${o}</option>`
-                    ).join('');
+                    const locDisplay = isTraveling
+                        ? `<span class="badge" style="background:rgba(99,102,241,0.22);color:#c7d2fe;border:1px solid rgba(99,102,241,0.4);padding:0.3rem 0.55rem;font-size:0.83rem;" title="✈️ 依下方履歷自動判定出差中 (${tripInfo})"><i class="fa-solid fa-plane-departure" style="color:#818cf8;margin-right:4px;"></i>${activeLoc} <small style="color:#a5b4fc;">(出差中)</small></span>`
+                        : `<span class="badge" style="background:rgba(148,163,184,0.15);color:#cbd5e1;border:1px solid rgba(148,163,184,0.3);padding:0.3rem 0.55rem;font-size:0.83rem;" title="🏠 常態在辦公室"><i class="fa-solid fa-house-laptop" style="margin-right:4px;"></i>${activeLoc}</span>`;
 
                     const tr = document.createElement('tr');
                     tr.innerHTML = `
                         <td><strong>${m.name}</strong></td>
-                        <td>
-                            <select onchange="updateMemberLocation(${m.id}, this.value)" style="padding: 4px 6px; font-size: 0.83rem; width: 100%;">
-                                ${optHtml}
-                            </select>
-                        </td>
+                        <td>${locDisplay}</td>
                         <td>
                             <div style="display:flex; align-items:center; gap:4px;">
                                 <input type="number" step="any" value="${quota}" onchange="updateMemberQuota(${m.id}, this.value)" style="width: 90px; padding: 3px 6px; font-size: 0.83rem;" title="雙擊或輸入數字修改總額度">
