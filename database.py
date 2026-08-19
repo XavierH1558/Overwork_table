@@ -1073,7 +1073,27 @@ def get_monthly_stats(month=None, start_date=None, end_date=None):
     team_est_comp_hours = 0.0
     team_est_comp_days = 0.0
 
-    fallback_loc_date = f"{month or '2026/07'}/15"
+    if start_date and end_date:
+        period_start = normalize_date_fmt(start_date)
+        period_end = normalize_date_fmt(end_date)
+    elif month:
+        parts = month.replace("-", "/").split('/')
+        if len(parts) >= 2:
+            try:
+                y_val = int(parts[0])
+                m_val = int(parts[1])
+                period_start = f"{y_val:04d}/{m_val:02d}/01"
+                period_end = f"{y_val:04d}/{m_val:02d}/31"
+            except Exception:
+                period_start = f"{parts[0]}/{parts[1]}/01"
+                period_end = f"{parts[0]}/{parts[1]}/31"
+        else:
+            period_start = f"{month}/01"
+            period_end = f"{month}/31"
+    else:
+        now = datetime.now()
+        period_start = f"{now.year:04d}/{now.month:02d}/01"
+        period_end = f"{now.year:04d}/{now.month:02d}/31"
 
     for name in names:
         n_key = name.strip().lower()
@@ -1085,6 +1105,7 @@ def get_monthly_stats(month=None, start_date=None, end_date=None):
         special_reasons_list = []
         location_ot_summary = {}
 
+        # 1. Locations with actual overtime records in this period
         for r in ot_rows:
             h = float(r.get('hours') or 0.0)
             is_sp = bool(r.get('is_special'))
@@ -1119,9 +1140,37 @@ def get_monthly_stats(month=None, start_date=None, end_date=None):
         team_weekday_hours += weekday_ot_hours
         team_weekend_hours += weekend_ot_hours
 
-        # If no overtime records, query default location for member in that month
+        # 2. Check locations from leave records in this period
+        leaves = lv_by_name.get(n_key, [])
+        for l in leaves:
+            l_date = l.get('date') or ''
+            l_loc = get_member_location_at_date(name, l_date, location_histories=location_histories, default_locations=default_locations)
+            if l_loc not in location_ot_summary:
+                location_ot_summary[l_loc] = {
+                    "ot_count": 0,
+                    "weekday_hours": 0.0,
+                    "weekend_hours": 0.0,
+                    "total_hours": 0.0
+                }
+
+        # 3. Check any stationing history records that overlap with this period [period_start, period_end]
+        for h in location_histories:
+            if (h.get('name') or '').strip().lower() == n_key:
+                h_start = normalize_date_fmt(h.get('start_date') or '')
+                h_end = normalize_date_fmt(h.get('end_date') or '') if h.get('end_date') else '9999/12/31'
+                if h_start <= period_end and h_end >= period_start:
+                    h_loc = h.get('location') or '台灣辦公室'
+                    if h_loc not in location_ot_summary:
+                        location_ot_summary[h_loc] = {
+                            "ot_count": 0,
+                            "weekday_hours": 0.0,
+                            "weekend_hours": 0.0,
+                            "total_hours": 0.0
+                        }
+
+        # 4. Fallback if still empty (no OT, no leaves, no overlapping history)
         if not location_ot_summary:
-            curr_loc = get_member_location_at_date(name, fallback_loc_date, location_histories=location_histories, default_locations=default_locations)
+            curr_loc = default_locations.get(n_key, '台灣辦公室')
             location_ot_summary[curr_loc] = {
                 "ot_count": 0,
                 "weekday_hours": 0.0,
@@ -1215,7 +1264,7 @@ def get_monthly_stats(month=None, start_date=None, end_date=None):
 
         stats_list.append({
             "name": name,
-            "location": get_member_location_at_date(name, fallback_loc_date, location_histories=location_histories, default_locations=default_locations),
+            "location": location_breakdown[0]['location'] if location_breakdown else default_locations.get(n_key, '台灣辦公室'),
             "location_breakdown": location_breakdown,
             "ot_count": ot_count,
             "leave_count": len(leaves),
