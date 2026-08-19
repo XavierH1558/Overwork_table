@@ -1168,15 +1168,22 @@ def get_monthly_stats(month=None, start_date=None, end_date=None):
                             "total_hours": 0.0
                         }
 
-        # 4. Fallback if still empty (no OT, no leaves, no overlapping history)
-        if not location_ot_summary:
-            curr_loc = default_locations.get(n_key, '台灣辦公室')
-            location_ot_summary[curr_loc] = {
-                "ot_count": 0,
-                "weekday_hours": 0.0,
-                "weekend_hours": 0.0,
-                "total_hours": 0.0
-            }
+        # 4. If stationing histories do not fully cover [period_start, period_end], include the member's base office
+        base_loc = default_locations.get(n_key, '台灣辦公室')
+        if base_loc not in location_ot_summary:
+            fully_covered = any(
+                (h.get('name') or '').strip().lower() == n_key and
+                normalize_date_fmt(h.get('start_date') or '') <= period_start and
+                (normalize_date_fmt(h.get('end_date') or '') if h.get('end_date') else '9999/12/31') >= period_end
+                for h in location_histories
+            )
+            if not fully_covered or not location_ot_summary:
+                location_ot_summary[base_loc] = {
+                    "ot_count": 0,
+                    "weekday_hours": 0.0,
+                    "weekend_hours": 0.0,
+                    "total_hours": 0.0
+                }
 
         location_breakdown = []
         for loc_name, loc_data in location_ot_summary.items():
