@@ -406,18 +406,75 @@ def get_stats():
 def export_csv():
     month = request.args.get('month')
     ot_records = database.get_overtime_records(month=month)
+    lv_records = database.get_leave_records(month=month)
+    stats_data = database.get_monthly_stats(month=month)
+    stats_list = stats_data.get('stats', [])
     
     output = io.StringIO()
     output.write('\ufeff')
     writer = csv.writer(output)
     
-    writer.writerow(['Date', 'Name', 'Time', 'Hours', 'Reason', '備註', '評估時數'])
+    safe_month = (month or '全部月份').replace('/', '_')
+    
+    # 1. 團隊統計摘要
+    writer.writerow([f'【團隊加班與請假統計摘要 - {month or "全部月份"}】'])
+    writer.writerow(['姓名', '駐點地點', '加班總數(筆)', '平日加班(hr)', '假日加班(hr)', '加班時數小計(hr)', '預估可獲補休(天)', '請假總數(筆)', '請假假別組成明細', 'Google補休總額(天)', '已扣補休(天)', '剩餘補休(天)'])
+    for s in stats_list:
+        loc_str = s.get('location') or '-'
+        ot_cnt = s.get('ot_count', 0)
+        wd_ot = s.get('weekday_ot_hours', 0.0)
+        we_ot = s.get('weekend_ot_hours', 0.0)
+        tot_ot = s.get('overtime_hours', 0.0)
+        est_days = s.get('est_comp_days', 0.0)
+        lv_cnt = s.get('leave_count', 0)
+        lb_list = [b['label'] for b in s.get('leave_breakdown', [])]
+        lb_str = ' | '.join(lb_list) if lb_list else '-'
+        quota = s.get('google_comp_quota', 0.0)
+        used = s.get('google_comp_used_total', 0.0)
+        rem = s.get('google_comp_remaining', 0.0)
+        writer.writerow([s.get('name'), loc_str, ot_cnt, wd_ot, we_ot, tot_ot, est_days, lv_cnt, lb_str, quota, used, rem])
+    
+    writer.writerow([])
+    
+    # 2. 加班明細
+    writer.writerow([f'【加班紀錄明細 - {month or "全部月份"}】 (共 {len(ot_records)} 筆)'])
+    writer.writerow(['日期', '加班類型', '姓名', '加班地點', '時間區間', '加班時數(hr)', '事由', '備註', '評估時數(hr)'])
     for r in ot_records:
-        writer.writerow([r['date'], r['name'], r['time'], r['hours'], r['reason'], r['note'], r['eval_hours']])
+        loc = database.get_member_location_at_date(r['name'], r['date'])
+        note = r.get('note') or ('假日加班' if r.get('note') == '假日加班' or r.get('is_special') else '平日加班')
+        writer.writerow([r.get('date'), note, r.get('name'), loc, r.get('time'), r.get('hours'), r.get('reason'), r.get('special_reason') or r.get('note') or '', r.get('eval_hours')])
         
-    response = Response(output.getvalue(), mimetype='text/csv')
-    filename = f"Overtime_Report_{month or 'All'}.csv"
-    response.headers["Content-Disposition"] = f"attachment; filename={filename}"
+    writer.writerow([])
+    
+    # 3. 請假明細
+    writer.writerow([f'【請假紀錄明細 - {month or "全部月份"}】 (共 {len(lv_records)} 筆)'])
+    writer.writerow(['日期', '姓名', '假別', '時長', 'Google補休(天)', '事由', '補休扣除狀態'])
+    check_counts = {}
+    sorted_leaves = sorted(lv_records, key=lambda x: (x.get('date', ''), x.get('id', 0)))
+    for r in sorted_leaves:
+        lt = r.get('leave_type', '')
+        if lt == '出勤確認':
+            n = (r.get('name') or '').strip()
+            check_counts[n] = check_counts.get(n, 0) + 1
+            seq = check_counts[n]
+            if seq > 4:
+                lt_display = f"出勤確認 (第{seq}次-超額)"
+            else:
+                lt_display = f"出勤確認 ({seq}/4)"
+        else:
+            lt_display = lt
+            
+        is_ded = r.get('is_comp_deducted')
+        if r.get('leave_type') in ['黑假', 'WFH']:
+            ded_str = '已扣補休' if is_ded == 1 else '還沒扣'
+        else:
+            ded_str = '-'
+            
+        writer.writerow([r.get('date'), r.get('name'), lt_display, r.get('duration'), r.get('google_comp_days', 0.0), r.get('reason', ''), ded_str])
+        
+    response = Response(output.getvalue(), mimetype='text/csv; charset=utf-8')
+    filename = f"Attendance_Report_{safe_month}.csv"
+    response.headers["Content-Disposition"] = f'attachment; filename="{filename}"; filename*=UTF-8\'\'{filename}'
     return response
 
 @app.route('/api/asw_export', methods=['GET'])

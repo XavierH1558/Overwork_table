@@ -4559,6 +4559,7 @@
         // Export CSV
         function exportCSV() {
             const month = document.getElementById('monthSelect').value;
+            showToast(`📊 正在下載 [${month || '全部月份'}] 團隊考勤與請假統計 CSV...`);
             window.location.href = `/api/export?month=${encodeURIComponent(month)}`;
         }
 
