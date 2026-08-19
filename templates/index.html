@@ -366,7 +366,9 @@
         .badge-leave-personal { background: rgba(245, 158, 11, 0.2); color: #fcd34d; border: 1px solid rgba(245, 158, 11, 0.4); } /* 事假 - 琥珀黃 */
         .badge-leave-annual { background: rgba(34, 197, 94, 0.2); color: #86efac; border: 1px solid rgba(34, 197, 94, 0.4); } /* 特休 - 翠綠色 */
         .badge-leave-menstrual { background: rgba(236, 72, 153, 0.2); color: #f472b6; border: 1px solid rgba(236, 72, 153, 0.4); } /* 生理假 - 粉紅色 */
-        .badge-leave-check { background: rgba(14, 165, 233, 0.2); color: #38bdf8; border: 1px solid rgba(14, 165, 233, 0.4); } /* 出勤確認 - 水藍色 */
+        .badge-leave-check { background: rgba(14, 165, 233, 0.2); color: #38bdf8; border: 1px solid rgba(14, 165, 233, 0.4); } /* 出勤確認 - 水藍色 (1~3次) */
+        .badge-leave-check-full { background: rgba(245, 158, 11, 0.25); color: #fcd34d; border: 1px solid rgba(245, 158, 11, 0.5); font-weight: 700; } /* 出勤確認 (4/4次 額度已滿) */
+        .badge-leave-check-exceeded { background: rgba(239, 68, 68, 0.25); color: #fca5a5; border: 1px solid rgba(239, 68, 68, 0.6); font-weight: 700; } /* 出勤確認 (超過4次 紅色警示) */
         .badge-leave-business { background: rgba(20, 184, 166, 0.2); color: #2dd4bf; border: 1px solid rgba(20, 184, 166, 0.4); } /* 因公外出 - 青碧色 */
 
         /* Form Controls */
@@ -743,6 +745,24 @@
             color: #ffffff;
         }
 
+        /* Person Group Header Row in Table */
+        tr.person-group-header td {
+            background: linear-gradient(90deg, rgba(14, 165, 233, 0.22) 0%, rgba(30, 41, 59, 0.8) 100%) !important;
+            border-top: 1px solid rgba(14, 165, 233, 0.4) !important;
+            border-bottom: 1px solid rgba(14, 165, 233, 0.3) !important;
+            padding: 0.55rem 0.9rem !important;
+            color: #ffffff;
+        }
+
+        .person-group-left {
+            display: flex;
+            align-items: center;
+            gap: 0.6rem;
+            font-size: 0.9rem;
+            font-weight: 700;
+            color: #7dd3fc;
+        }
+
         .week-group-title {
             display: flex;
             align-items: center;
@@ -764,10 +784,11 @@
         .week-group-stats {
             display: inline-flex;
             align-items: center;
-            gap: 0.6rem;
+            gap: 0.5rem;
             font-size: 0.8rem;
             font-weight: 500;
             color: var(--text-muted);
+            flex-wrap: wrap;
         }
 
         .week-group-stats .stat-tag {
@@ -776,6 +797,46 @@
             border-radius: 1rem;
             border: 1px solid rgba(255, 255, 255, 0.1);
             color: #cbd5e1;
+        }
+
+        /* Segmented Mode Switcher / Slider */
+        .segmented-control {
+            display: inline-flex;
+            align-items: center;
+            background: rgba(15, 23, 42, 0.65);
+            border: 1px solid var(--card-border);
+            border-radius: 0.5rem;
+            padding: 3px;
+            gap: 2px;
+        }
+
+        .segmented-btn {
+            background: transparent;
+            border: none;
+            border-radius: 0.35rem;
+            padding: 0.35rem 0.75rem;
+            color: var(--text-muted);
+            font-size: 0.82rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+            display: inline-flex;
+            align-items: center;
+            gap: 0.35rem;
+            white-space: nowrap;
+            user-select: none;
+        }
+
+        .segmented-btn:hover {
+            color: var(--text-main);
+            background: rgba(255, 255, 255, 0.06);
+        }
+
+        .segmented-btn.active {
+            background: linear-gradient(135deg, rgba(6, 182, 212, 0.35), rgba(14, 165, 233, 0.5));
+            border: 1px solid rgba(56, 189, 248, 0.55);
+            color: #ffffff;
+            box-shadow: 0 2px 8px rgba(6, 182, 212, 0.3);
         }
 
         /* Week Badge */
@@ -1023,9 +1084,17 @@
                             <option value="因公外出">因公外出</option>
                         </select>
                         <input type="text" id="leaveSearch" placeholder="搜尋人員/原因/假別/日期..." oninput="debounceLoadLeaves()">
-                        <button class="btn btn-secondary" id="btnLeaveGroupToggle" onclick="toggleLeaveGrouping()" style="border-color: rgba(6,182,212,0.4); color: #67e8f9;" title="切換分週群組檢視或平鋪列表">
-                            <i class="fa-solid fa-layer-group"></i> 依週次分組：開
-                        </button>
+                        <div class="segmented-control" id="leaveGroupSegmented">
+                            <button type="button" class="segmented-btn active" id="segLeaveMember" onclick="setLeaveGroupingMode('member')" title="依人員分組排序 (主管檢視推薦)">
+                                <i class="fa-solid fa-users"></i> 依人員
+                            </button>
+                            <button type="button" class="segmented-btn" id="segLeaveDate" onclick="setLeaveGroupingMode('date')" title="依日期/週次分組">
+                                <i class="fa-solid fa-calendar-days"></i> 依週次
+                            </button>
+                            <button type="button" class="segmented-btn" id="segLeaveFlat" onclick="setLeaveGroupingMode('flat')" title="平鋪清單列表">
+                                <i class="fa-solid fa-list"></i> 清單
+                            </button>
+                        </div>
                         <button class="btn btn-primary" id="btnAddLeave" onclick="showAddLeaveModal()">
                             <i class="fa-solid fa-plus"></i> 新增請假紀錄
                         </button>
@@ -1978,15 +2047,23 @@
             loadOvertime();
         }
 
-        function toggleLeaveGrouping() {
-            isLeaveGroupedByWeek = !isLeaveGroupedByWeek;
-            const btn = document.getElementById('btnLeaveGroupToggle');
-            if (btn) {
-                btn.innerHTML = isLeaveGroupedByWeek 
-                    ? '<i class="fa-solid fa-layer-group"></i> 依週次分組：開' 
-                    : '<i class="fa-solid fa-list"></i> 平鋪列表：開';
-            }
+        let leaveGroupingMode = 'member'; // 'member' | 'date' | 'flat'
+
+        function setLeaveGroupingMode(mode) {
+            leaveGroupingMode = mode;
+            const btnMember = document.getElementById('segLeaveMember');
+            const btnDate = document.getElementById('segLeaveDate');
+            const btnFlat = document.getElementById('segLeaveFlat');
+            if (btnMember) btnMember.classList.toggle('active', mode === 'member');
+            if (btnDate) btnDate.classList.toggle('active', mode === 'date');
+            if (btnFlat) btnFlat.classList.toggle('active', mode === 'flat');
             loadLeaves();
+        }
+
+        function toggleLeaveGrouping() {
+            if (leaveGroupingMode === 'member') setLeaveGroupingMode('date');
+            else if (leaveGroupingMode === 'date') setLeaveGroupingMode('flat');
+            else setLeaveGroupingMode('member');
         }
 
         // Debounce helpers for search inputs
@@ -2037,7 +2114,7 @@
             const badgeEl = document.getElementById('monthLockBadge');
             if (!badgeEl) return;
             if (isMonthInPast(ym)) {
-                badgeEl.innerHTML = `<span class="badge" style="background:rgba(245,158,11,0.22); color:#fcd34d; border:1px solid rgba(245,158,11,0.45); font-size:0.78rem; white-space:nowrap; padding:4px 8px;" title="此月份早於系統當前月份，已自動啟用唯讀保護，無法新增、修改或刪除"><i class="fa-solid fa-lock"></i> 歷史唯讀</span>`;
+                badgeEl.innerHTML = `<span class="badge" style="background:rgba(245,158,11,0.2); color:#fcd34d; border:1px solid rgba(245,158,11,0.4); font-size:0.78rem; white-space:nowrap; padding:4px 8px;" title="此月份早於系統當前月份（修改時會跳出確認提醒）"><i class="fa-solid fa-clock-rotate-left"></i> 歷史月份</span>`;
             } else {
                 badgeEl.innerHTML = `<span class="badge" style="background:rgba(34,197,94,0.18); color:#4ade80; border:1px solid rgba(34,197,94,0.35); font-size:0.78rem; white-space:nowrap; padding:4px 8px;" title="當前或未來月份，可正常新增與編輯資料"><i class="fa-solid fa-pen-to-square"></i> 可編輯</span>`;
             }
@@ -2063,7 +2140,7 @@
                 const ym = `${iterDate.getFullYear()}/${String(iterDate.getMonth() + 1).padStart(2, '0')}`;
                 let label = ym;
                 if (isMonthInPast(ym)) {
-                    label = `${ym} 🔒(歷史唯讀)`;
+                    label = `${ym} 📁(歷史月份)`;
                 } else if (iterDate.getFullYear() === currentYear && (iterDate.getMonth() + 1) === currentMonth) {
                     label = `${ym} ⭐(當前月份)`;
                 }
@@ -2363,7 +2440,7 @@
                 if (bannerEl) {
                     const isPast = isMonthInPast(month);
                     const pastBadge = isPast 
-                        ? `<span class="badge" style="background:rgba(245,158,11,0.2); color:#fcd34d; border:1px solid rgba(245,158,11,0.45); font-size:0.8rem; margin-left:0.4rem;"><i class="fa-solid fa-lock"></i> 歷史月份已封存 (唯讀)</span>` 
+                        ? `<span class="badge" style="background:rgba(245,158,11,0.2); color:#fcd34d; border:1px solid rgba(245,158,11,0.4); font-size:0.8rem; margin-left:0.4rem;"><i class="fa-solid fa-clock-rotate-left"></i> 歷史月份</span>` 
                         : '';
 
                     if (!weekObj) {
@@ -2439,6 +2516,15 @@
                     let leaveDetailHtml = '-';
                     if (leaveBreakdown.length > 0) {
                         leaveDetailHtml = leaveBreakdown.map(b => {
+                            if (b.type === '出勤確認') {
+                                if (b.exceeded || (b.count && b.count > 4)) {
+                                    return `<span class="badge badge-leave-check-exceeded" style="margin-right:4px;" title="⚠️ 本月出勤確認已申請 ${b.count} 次，超過 4 次上限！"><i class="fa-solid fa-triangle-exclamation"></i> ${b.label}</span>`;
+                                } else if (b.count === 4) {
+                                    return `<span class="badge badge-leave-check-full" style="margin-right:4px;" title="本月出勤確認 4 次 (額度已滿)">${b.label}</span>`;
+                                } else {
+                                    return `<span class="badge badge-leave-check" style="margin-right:4px;">${b.label}</span>`;
+                                }
+                            }
                             const bClass = getLeaveBadgeClass(b.type);
                             return `<span class="badge ${bClass}" style="margin-right:4px;">${b.label}</span>`;
                         }).join('');
@@ -2655,22 +2741,14 @@
             const monthNum = parseInt(parts[1], 10);
             const monthWeeks = getWeeksInMonth(yearNum, monthNum);
 
-            // Update Add Overtime Button state based on month lock
+            // Update Add Overtime Button state
             const addOtBtn = document.getElementById('btnAddOt');
             if (addOtBtn) {
-                if (isLockedMonth) {
-                    addOtBtn.disabled = true;
-                    addOtBtn.style.opacity = '0.45';
-                    addOtBtn.style.cursor = 'not-allowed';
-                    addOtBtn.style.filter = 'grayscale(1)';
-                    addOtBtn.setAttribute('title', '🔒 歷史月份已封存鎖定，無法新增加班紀錄');
-                } else {
-                    addOtBtn.disabled = false;
-                    addOtBtn.style.opacity = '1';
-                    addOtBtn.style.cursor = 'pointer';
-                    addOtBtn.style.filter = 'none';
-                    addOtBtn.removeAttribute('title');
-                }
+                addOtBtn.disabled = false;
+                addOtBtn.style.opacity = '1';
+                addOtBtn.style.cursor = 'pointer';
+                addOtBtn.style.filter = 'none';
+                addOtBtn.removeAttribute('title');
             }
 
             const search = document.getElementById('otSearch').value;
@@ -2782,12 +2860,10 @@
                             const dateTagClass = isDateWeekend ? 'weekday-tag weekend' : 'weekday-tag';
                             const wBadge = wInfo ? `<span class="badge badge-week">第${wInfo.weekIndex}週</span>` : '';
 
-                            const actionCellHtml = isLockedMonth
-                                ? `<div class="action-cell"><span class="badge" style="background:rgba(148,163,184,0.12);color:#94a3b8;border:1px solid rgba(148,163,184,0.25);font-size:0.75rem;" title="歷史月份已鎖定，僅供檢視"><i class="fa-solid fa-lock"></i> 唯讀</span></div>`
-                                : `<div class="action-cell">
-                                    <button class="action-btn" onclick="openOtEditModal(${r.id})"><i class="fa-solid fa-pen-to-square"></i> 編輯</button>
-                                    <button class="action-btn delete" onclick="deleteOvertime(${r.id})"><i class="fa-solid fa-trash"></i></button>
-                                   </div>`;
+                            const actionCellHtml = `<div class="action-cell">
+                                <button class="action-btn" onclick="openOtEditModal(${r.id})"><i class="fa-solid fa-pen-to-square"></i> 編輯</button>
+                                <button class="action-btn delete" onclick="deleteOvertime(${r.id})"><i class="fa-solid fa-trash"></i></button>
+                            </div>`;
 
                             tr.innerHTML = `
                                 <td>${r.date} <span class="${dateTagClass}">${weekdayStr}</span>${wBadge}</td>
@@ -2827,12 +2903,10 @@
                         const dateTagClass = isDateWeekend ? 'weekday-tag weekend' : 'weekday-tag';
                         const wBadge = wInfo ? `<span class="badge badge-week">第${wInfo.weekIndex}週</span>` : '';
 
-                        const actionCellHtml = isLockedMonth
-                            ? `<div class="action-cell"><span class="badge" style="background:rgba(148,163,184,0.12);color:#94a3b8;border:1px solid rgba(148,163,184,0.25);font-size:0.75rem;" title="歷史月份已鎖定，僅供檢視"><i class="fa-solid fa-lock"></i> 唯讀</span></div>`
-                            : `<div class="action-cell">
-                                <button class="action-btn" onclick="openOtEditModal(${r.id})"><i class="fa-solid fa-pen-to-square"></i> 編輯</button>
-                                <button class="action-btn delete" onclick="deleteOvertime(${r.id})"><i class="fa-solid fa-trash"></i></button>
-                               </div>`;
+                        const actionCellHtml = `<div class="action-cell">
+                            <button class="action-btn" onclick="openOtEditModal(${r.id})"><i class="fa-solid fa-pen-to-square"></i> 編輯</button>
+                            <button class="action-btn delete" onclick="deleteOvertime(${r.id})"><i class="fa-solid fa-trash"></i></button>
+                        </div>`;
 
                         tr.innerHTML = `
                             <td>${r.date} <span class="${dateTagClass}">${weekdayStr}</span>${wBadge}</td>
@@ -2856,12 +2930,12 @@
         // Delete Overtime
         function deleteOvertime(id) {
             const month = document.getElementById('monthSelect').value;
-            if (isMonthInPast(month)) {
-                alert('🔒 歷史月份已封存鎖定，無法刪除紀錄！');
-                return;
-            }
+            const isPast = isMonthInPast(month);
             ensureAdminUnlocked(async () => {
-                if (!confirm('確定要刪除此筆加班紀錄嗎？')) return;
+                const confirmMsg = isPast 
+                    ? '⚠️ 此紀錄屬於歷史月份，確定要刪除此筆歷史加班紀錄嗎？'
+                    : '確定要刪除此筆加班紀錄嗎？';
+                if (!confirm(confirmMsg)) return;
                 const res = await fetch(`/api/overtime/${id}`, { method: 'DELETE', headers: getAuthHeaders() });
                 if (res.ok) {
                     showToast('已成功刪除加班紀錄');
@@ -2872,6 +2946,67 @@
                     alert(err.message || '刪除失敗');
                 }
             });
+        }
+
+        // Build Month-Wide Attendance Check Sequence Map
+        let cachedMonthAttendanceCheckMap = {}; // { recId: { index: N, total: M, exceeded: bool } }
+        let cachedMonthCheckCountsByName = {}; // { name: count }
+        let lastBuiltCheckMonth = '';
+
+        function buildAttendanceCheckMap(allMonthRecords, monthKey) {
+            const map = {};
+            const byName = {};
+            const counts = {};
+
+            (allMonthRecords || []).forEach(r => {
+                if (r.leave_type === '出勤確認') {
+                    const n = (r.name || '').trim();
+                    if (!byName[n]) byName[n] = [];
+                    byName[n].push(r);
+                }
+            });
+
+            Object.keys(byName).forEach(n => {
+                const list = byName[n];
+                list.sort((a, b) => {
+                    const dCmp = (a.date || '').localeCompare(b.date || '');
+                    if (dCmp !== 0) return dCmp;
+                    return (a.id || 0) - (b.id || 0);
+                });
+                counts[n] = list.length;
+                list.forEach((r, idx) => {
+                    const seq = idx + 1;
+                    map[r.id] = {
+                        index: seq,
+                        total: list.length,
+                        exceeded: seq > 4
+                    };
+                });
+            });
+
+            cachedMonthAttendanceCheckMap = map;
+            cachedMonthCheckCountsByName = counts;
+            if (monthKey) lastBuiltCheckMonth = monthKey;
+            return map;
+        }
+
+        // Render Leave Badge with Quota & Sequence Indicator
+        function renderLeaveTypeBadge(leaveType, recId, checkMap) {
+            if (leaveType === '出勤確認') {
+                const info = (checkMap && checkMap[recId]) ? checkMap[recId] : cachedMonthAttendanceCheckMap[recId];
+                if (!info) {
+                    return `<span class="badge badge-leave-check">出勤確認</span>`;
+                }
+                if (info.exceeded) {
+                    return `<span class="badge badge-leave-check-exceeded" title="⚠️ 超過每月份 4 次上限！本月已累計第 ${info.index} 次"><i class="fa-solid fa-triangle-exclamation"></i> 出勤確認 (第${info.index}次 · 超額)</span>`;
+                } else if (info.index === 4) {
+                    return `<span class="badge badge-leave-check-full" title="本月第 4 次出勤確認 (4次額度已滿)"><i class="fa-solid fa-bell"></i> 出勤確認 (4/4 · 滿)</span>`;
+                } else {
+                    return `<span class="badge badge-leave-check" title="本月第 ${info.index} 次出勤確認 (剩餘 ${4 - info.index} 次額度)">出勤確認 (${info.index}/4)</span>`;
+                }
+            }
+            const badgeClass = getLeaveBadgeClass(leaveType);
+            return `<span class="badge ${badgeClass}">${leaveType}</span>`;
         }
 
         // Leave Badge Class Helper
@@ -2905,22 +3040,14 @@
             const monthNum = parseInt(parts[1], 10);
             const monthWeeks = getWeeksInMonth(yearNum, monthNum);
 
-            // Update Add Leave Button state based on month lock
+            // Update Add Leave Button state
             const addLeaveBtn = document.getElementById('btnAddLeave');
             if (addLeaveBtn) {
-                if (isLockedMonth) {
-                    addLeaveBtn.disabled = true;
-                    addLeaveBtn.style.opacity = '0.45';
-                    addLeaveBtn.style.cursor = 'not-allowed';
-                    addLeaveBtn.style.filter = 'grayscale(1)';
-                    addLeaveBtn.setAttribute('title', '🔒 歷史月份已封存鎖定，無法新增請假紀錄');
-                } else {
-                    addLeaveBtn.disabled = false;
-                    addLeaveBtn.style.opacity = '1';
-                    addLeaveBtn.style.cursor = 'pointer';
-                    addLeaveBtn.style.filter = 'none';
-                    addLeaveBtn.removeAttribute('title');
-                }
+                addLeaveBtn.disabled = false;
+                addLeaveBtn.style.opacity = '1';
+                addLeaveBtn.style.cursor = 'pointer';
+                addLeaveBtn.style.filter = 'none';
+                addLeaveBtn.removeAttribute('title');
             }
 
             const search = document.getElementById('leaveSearch').value;
@@ -2943,21 +3070,155 @@
             }
 
             try {
+                // Ensure month-wide attendance checks are loaded for accurate 4-quota counting
+                if (lastBuiltCheckMonth !== month) {
+                    try {
+                        const monthCheckRes = await fetch(`/api/leaves?month=${encodeURIComponent(month)}&leave_types=出勤確認`, { signal });
+                        if (monthCheckRes.ok) {
+                            const monthChecks = await monthCheckRes.json();
+                            buildAttendanceCheckMap(monthChecks, month);
+                        }
+                    } catch(e) {
+                        if (e.name === 'AbortError') return;
+                    }
+                }
+
                 const res = await fetch(queryUrl, { signal });
                 if (currentReqId !== globalLeaveRequestId) return;
                 const records = await res.json();
                 if (currentReqId !== globalLeaveRequestId) return;
+
+                // If viewing full month with no extra filters, refresh map from full records
+                if (weekFilter === 'all' && !search && !leaveType) {
+                    buildAttendanceCheckMap(records, month);
+                }
 
                 const tbody = document.getElementById('leavesTableBody');
                 if (!tbody) return;
                 tbody.innerHTML = '';
 
                 if (records.length === 0) {
-                    tbody.innerHTML = `<tr><td colspan="8" style="text-align:center; color:var(--text-muted); padding:1.5rem;">此條件下無請假紀錄</td></tr>`;
+                    tbody.innerHTML = `<tr><td colspan="8" style="text-align:center; color:var(--text-muted); padding:1.8rem;"><i class="fa-solid fa-calendar-xmark" style="font-size:1.5rem;display:block;margin-bottom:0.4rem;color:#38bdf8;"></i>此條件下無請假紀錄</td></tr>`;
                     return;
                 }
 
-                if (isLeaveGroupedByWeek) {
+                // Helper to render row
+                const renderLeaveRow = (r) => {
+                    const tr = document.createElement('tr');
+                    const isCompLeave = (r.leave_type === '黑假' || r.leave_type === 'WFH');
+                    let statusControlHtml = '<span style="color:var(--text-muted);font-size:0.83rem;">-</span>';
+                    
+                    if (isCompLeave) {
+                        const isDed = (r.is_comp_deducted === undefined || r.is_comp_deducted === null) ? 1 : (r.is_comp_deducted ? 1 : 0);
+                        const bgStyle = isDed === 1 
+                            ? 'background:rgba(56,189,248,0.15);color:#38bdf8;border:1px solid rgba(56,189,248,0.4);' 
+                            : 'background:rgba(245,158,11,0.18);color:#fcd34d;border:1px solid rgba(245,158,11,0.4);';
+                        statusControlHtml = `
+                            <select onchange="changeDeductedStatus(${r.id}, this)" 
+                                    style="${bgStyle} font-weight: 600; font-size: 0.78rem; padding: 2px 6px; height: 26px; border-radius: 5px; cursor: pointer; outline: none; transition: all 0.15s ease;"
+                                    title="選擇扣除狀態">
+                                <option value="1" ${isDed === 1 ? 'selected' : ''} style="background:#1e293b;color:#38bdf8;">✓ 已扣補休</option>
+                                <option value="0" ${isDed === 0 ? 'selected' : ''} style="background:#1e293b;color:#fcd34d;">⏳ 還沒扣</option>
+                            </select>
+                        `;
+                    }
+
+                    const wInfo = getWeekInfoForDate(r.date, monthWeeks);
+                    const weekdayStr = getChineseWeekday(r.date);
+                    const isDateWeekend = isWeekend(r.date);
+                    const dateTagClass = isDateWeekend ? 'weekday-tag weekend' : 'weekday-tag';
+                    const wBadge = wInfo ? `<span class="badge badge-week" style="background:rgba(6,182,212,0.15);color:#67e8f9;border-color:rgba(6,182,212,0.35);">第${wInfo.weekIndex}週</span>` : '';
+
+                    const actionCellHtml = `<div class="action-cell">
+                        <button class="action-btn" onclick="openLeaveEditModal(${r.id})"><i class="fa-solid fa-pen-to-square"></i> 編輯</button>
+                        <button class="action-btn delete" onclick="deleteLeave(${r.id})"><i class="fa-solid fa-trash"></i></button>
+                    </div>`;
+
+                    tr.innerHTML = `
+                        <td>${r.date} <span class="${dateTagClass}">${weekdayStr}</span>${wBadge}</td>
+                        <td><strong>${r.name}</strong></td>
+                        <td>${renderLeaveTypeBadge(r.leave_type, r.id, cachedMonthAttendanceCheckMap)}</td>
+                        <td>${r.duration}</td>
+                        <td>${r.google_comp_days > 0 ? `${r.google_comp_days} 天` : '-'}</td>
+                        <td>${r.reason || '-'}</td>
+                        <td>${statusControlHtml}</td>
+                        <td>${actionCellHtml}</td>
+                    `;
+                    return tr;
+                };
+
+                if (leaveGroupingMode === 'member') {
+                    // Group records by Member
+                    const grouped = {};
+                    records.forEach(r => {
+                        const n = (r.name || '未知').trim();
+                        if (!grouped[n]) {
+                            grouped[n] = {
+                                name: n,
+                                records: [],
+                                compDaysTotal: 0.0,
+                                leaveTypeCounts: {}
+                            };
+                        }
+                        grouped[n].records.push(r);
+                        grouped[n].compDaysTotal += parseFloat(r.google_comp_days || 0);
+                        const lt = r.leave_type || '其他';
+                        grouped[n].leaveTypeCounts[lt] = (grouped[n].leaveTypeCounts[lt] || 0) + 1;
+                    });
+
+                    const sortedNames = Object.keys(grouped).sort((a, b) => a.localeCompare(b, 'zh-Hant'));
+                    sortedNames.forEach(name => {
+                        const group = grouped[name];
+                        group.records.sort((a, b) => (a.date || '').localeCompare(b.date || '') || (a.id || 0) - (b.id || 0));
+
+                        const memberLoc = memberLocationMap[name] || '-';
+                        const mCheckCount = cachedMonthCheckCountsByName[name] || 0;
+                        let checkTagHtml = '';
+                        if (mCheckCount > 0) {
+                            if (mCheckCount > 4) {
+                                checkTagHtml = `<span class="stat-tag" style="background:rgba(239,68,68,0.25);color:#fca5a5;border:1px solid rgba(239,68,68,0.6);font-weight:700;"><i class="fa-solid fa-triangle-exclamation"></i> 出勤確認 ${mCheckCount}次 (超額${mCheckCount-4}次)</span>`;
+                            } else if (mCheckCount === 4) {
+                                checkTagHtml = `<span class="stat-tag" style="background:rgba(245,158,11,0.2);color:#fcd34d;border:1px solid rgba(245,158,11,0.5);font-weight:600;"><i class="fa-solid fa-bell"></i> 出勤確認 4/4次 (滿)</span>`;
+                            } else {
+                                checkTagHtml = `<span class="stat-tag" style="background:rgba(14,165,233,0.18);color:#7dd3fc;border:1px solid rgba(14,165,233,0.4);">出勤確認 ${mCheckCount}/4次</span>`;
+                            }
+                        }
+
+                        // Summary badges for leave types
+                        const ltBadges = Object.keys(group.leaveTypeCounts).map(lt => {
+                            if (lt === '出勤確認') return '';
+                            const c = group.leaveTypeCounts[lt];
+                            const bc = getLeaveBadgeClass(lt);
+                            return `<span class="badge ${bc}" style="font-size:0.72rem;padding:0.1rem 0.45rem;">${lt} ${c}筆</span>`;
+                        }).filter(Boolean).join(' ');
+
+                        // Header Row
+                        const headerTr = document.createElement('tr');
+                        headerTr.className = 'person-group-header';
+                        headerTr.innerHTML = `
+                            <td colspan="8">
+                                <div class="week-group-title">
+                                    <div class="person-group-left">
+                                        <i class="fa-solid fa-user-tag" style="color:#38bdf8;"></i>
+                                        <span>${name}</span>
+                                        <span class="badge" style="background:rgba(148,163,184,0.18);color:#cbd5e1;font-size:0.75rem;font-weight:normal;">📍 ${memberLoc}</span>
+                                    </div>
+                                    <div class="week-group-stats">
+                                        <span class="stat-tag"><strong style="color:#fff;">${group.records.length}</strong> 筆請假</span>
+                                        <span class="stat-tag">扣補休小計 <strong style="color:#38bdf8;">${group.compDaysTotal.toFixed(1)} 天</strong></span>
+                                        ${checkTagHtml}
+                                        ${ltBadges ? `<span>${ltBadges}</span>` : ''}
+                                    </div>
+                                </div>
+                            </td>
+                        `;
+                        tbody.appendChild(headerTr);
+
+                        group.records.forEach(r => {
+                            tbody.appendChild(renderLeaveRow(r));
+                        });
+                    });
+                } else if (leaveGroupingMode === 'date') {
                     // Group records by week
                     const grouped = {};
                     records.forEach(r => {
@@ -2999,128 +3260,14 @@
                         `;
                         tbody.appendChild(headerTr);
 
-                        // Render records
                         group.records.forEach(r => {
-                            const tr = document.createElement('tr');
-                            const badgeClass = getLeaveBadgeClass(r.leave_type);
-                            const isCompLeave = (r.leave_type === '黑假' || r.leave_type === 'WFH');
-                            let statusControlHtml = '<span style="color:var(--text-muted);font-size:0.83rem;">-</span>';
-                            
-                            if (isCompLeave) {
-                                const isDed = (r.is_comp_deducted === undefined || r.is_comp_deducted === null) ? 1 : (r.is_comp_deducted ? 1 : 0);
-                                if (isLockedMonth) {
-                                    const bgStyle = isDed === 1 
-                                        ? 'background:rgba(56,189,248,0.1);color:#7dd3fc;border:1px solid rgba(56,189,248,0.25);' 
-                                        : 'background:rgba(245,158,11,0.12);color:#fcd34d;border:1px solid rgba(245,158,11,0.25);';
-                                    statusControlHtml = `
-                                        <select disabled 
-                                                style="${bgStyle} font-weight: 600; font-size: 0.78rem; padding: 2px 6px; height: 26px; border-radius: 5px; cursor: not-allowed; opacity: 0.65; outline: none;"
-                                                title="🔒 歷史月份已鎖定唯讀，無法修改狀態">
-                                            <option value="1" ${isDed === 1 ? 'selected' : ''} style="background:#1e293b;color:#38bdf8;">✓ 已扣補休</option>
-                                            <option value="0" ${isDed === 0 ? 'selected' : ''} style="background:#1e293b;color:#fcd34d;">⏳ 還沒扣</option>
-                                        </select>
-                                    `;
-                                } else {
-                                    const bgStyle = isDed === 1 
-                                        ? 'background:rgba(56,189,248,0.15);color:#38bdf8;border:1px solid rgba(56,189,248,0.4);' 
-                                        : 'background:rgba(245,158,11,0.18);color:#fcd34d;border:1px solid rgba(245,158,11,0.4);';
-                                    statusControlHtml = `
-                                        <select onchange="changeDeductedStatus(${r.id}, this)" 
-                                                style="${bgStyle} font-weight: 600; font-size: 0.78rem; padding: 2px 6px; height: 26px; border-radius: 5px; cursor: pointer; outline: none; transition: all 0.15s ease;"
-                                                title="選擇扣除狀態">
-                                            <option value="1" ${isDed === 1 ? 'selected' : ''} style="background:#1e293b;color:#38bdf8;">✓ 已扣補休</option>
-                                            <option value="0" ${isDed === 0 ? 'selected' : ''} style="background:#1e293b;color:#fcd34d;">⏳ 還沒扣</option>
-                                        </select>
-                                    `;
-                                }
-                            }
-
-                            const weekdayStr = getChineseWeekday(r.date);
-                            const isDateWeekend = isWeekend(r.date);
-                            const dateTagClass = isDateWeekend ? 'weekday-tag weekend' : 'weekday-tag';
-                            const wBadge = wInfo ? `<span class="badge badge-week" style="background:rgba(6,182,212,0.15);color:#67e8f9;border-color:rgba(6,182,212,0.35);">第${wInfo.weekIndex}週</span>` : '';
-
-                            const actionCellHtml = isLockedMonth
-                                ? `<div class="action-cell"><span class="badge" style="background:rgba(148,163,184,0.12);color:#94a3b8;border:1px solid rgba(148,163,184,0.25);font-size:0.75rem;" title="歷史月份已鎖定，僅供檢視"><i class="fa-solid fa-lock"></i> 唯讀</span></div>`
-                                : `<div class="action-cell">
-                                    <button class="action-btn" onclick="openLeaveEditModal(${r.id})"><i class="fa-solid fa-pen-to-square"></i> 編輯</button>
-                                    <button class="action-btn delete" onclick="deleteLeave(${r.id})"><i class="fa-solid fa-trash"></i></button>
-                                   </div>`;
-
-                            tr.innerHTML = `
-                                <td>${r.date} <span class="${dateTagClass}">${weekdayStr}</span>${wBadge}</td>
-                                <td><strong>${r.name}</strong></td>
-                                <td><span class="badge ${badgeClass}">${r.leave_type}</span></td>
-                                <td>${r.duration}</td>
-                                <td>${r.google_comp_days > 0 ? `${r.google_comp_days} 天` : '-'}</td>
-                                <td>${r.reason || '-'}</td>
-                                <td>${statusControlHtml}</td>
-                                <td>${actionCellHtml}</td>
-                            `;
-                            tbody.appendChild(tr);
+                            tbody.appendChild(renderLeaveRow(r));
                         });
                     });
                 } else {
                     // Flat list view
                     records.forEach(r => {
-                        const tr = document.createElement('tr');
-                        const badgeClass = getLeaveBadgeClass(r.leave_type);
-                        const isCompLeave = (r.leave_type === '黑假' || r.leave_type === 'WFH');
-                        let statusControlHtml = '<span style="color:var(--text-muted);font-size:0.83rem;">-</span>';
-                        
-                        if (isCompLeave) {
-                            const isDed = (r.is_comp_deducted === undefined || r.is_comp_deducted === null) ? 1 : (r.is_comp_deducted ? 1 : 0);
-                            if (isLockedMonth) {
-                                const bgStyle = isDed === 1 
-                                    ? 'background:rgba(56,189,248,0.1);color:#7dd3fc;border:1px solid rgba(56,189,248,0.25);' 
-                                    : 'background:rgba(245,158,11,0.12);color:#fcd34d;border:1px solid rgba(245,158,11,0.25);';
-                                statusControlHtml = `
-                                    <select disabled 
-                                            style="${bgStyle} font-weight: 600; font-size: 0.78rem; padding: 2px 6px; height: 26px; border-radius: 5px; cursor: not-allowed; opacity: 0.65; outline: none;"
-                                            title="🔒 歷史月份已鎖定唯讀，無法修改狀態">
-                                        <option value="1" ${isDed === 1 ? 'selected' : ''} style="background:#1e293b;color:#38bdf8;">✓ 已扣補休</option>
-                                        <option value="0" ${isDed === 0 ? 'selected' : ''} style="background:#1e293b;color:#fcd34d;">⏳ 還沒扣</option>
-                                    </select>
-                                `;
-                            } else {
-                                const bgStyle = isDed === 1 
-                                    ? 'background:rgba(56,189,248,0.15);color:#38bdf8;border:1px solid rgba(56,189,248,0.4);' 
-                                    : 'background:rgba(245,158,11,0.18);color:#fcd34d;border:1px solid rgba(245,158,11,0.4);';
-                                statusControlHtml = `
-                                    <select onchange="changeDeductedStatus(${r.id}, this)" 
-                                            style="${bgStyle} font-weight: 600; font-size: 0.78rem; padding: 2px 6px; height: 26px; border-radius: 5px; cursor: pointer; outline: none; transition: all 0.15s ease;"
-                                            title="選擇扣除狀態">
-                                        <option value="1" ${isDed === 1 ? 'selected' : ''} style="background:#1e293b;color:#38bdf8;">✓ 已扣補休</option>
-                                        <option value="0" ${isDed === 0 ? 'selected' : ''} style="background:#1e293b;color:#fcd34d;">⏳ 還沒扣</option>
-                                    </select>
-                                `;
-                            }
-                        }
-
-                        const wInfo = getWeekInfoForDate(r.date, monthWeeks);
-                        const weekdayStr = getChineseWeekday(r.date);
-                        const isDateWeekend = isWeekend(r.date);
-                        const dateTagClass = isDateWeekend ? 'weekday-tag weekend' : 'weekday-tag';
-                        const wBadge = wInfo ? `<span class="badge badge-week" style="background:rgba(6,182,212,0.15);color:#67e8f9;border-color:rgba(6,182,212,0.35);">第${wInfo.weekIndex}週</span>` : '';
-
-                        const actionCellHtml = isLockedMonth
-                            ? `<div class="action-cell"><span class="badge" style="background:rgba(148,163,184,0.12);color:#94a3b8;border:1px solid rgba(148,163,184,0.25);font-size:0.75rem;" title="歷史月份已鎖定，僅供檢視"><i class="fa-solid fa-lock"></i> 唯讀</span></div>`
-                            : `<div class="action-cell">
-                                <button class="action-btn" onclick="openLeaveEditModal(${r.id})"><i class="fa-solid fa-pen-to-square"></i> 編輯</button>
-                                <button class="action-btn delete" onclick="deleteLeave(${r.id})"><i class="fa-solid fa-trash"></i></button>
-                               </div>`;
-
-                        tr.innerHTML = `
-                            <td>${r.date} <span class="${dateTagClass}">${weekdayStr}</span>${wBadge}</td>
-                            <td><strong>${r.name}</strong></td>
-                            <td><span class="badge ${badgeClass}">${r.leave_type}</span></td>
-                            <td>${r.duration}</td>
-                            <td>${r.google_comp_days > 0 ? `${r.google_comp_days} 天` : '-'}</td>
-                            <td>${r.reason || '-'}</td>
-                            <td>${statusControlHtml}</td>
-                            <td>${actionCellHtml}</td>
-                        `;
-                        tbody.appendChild(tr);
+                        tbody.appendChild(renderLeaveRow(r));
                     });
                 }
             } catch (err) {
@@ -3132,12 +3279,14 @@
         // Change Deducted Status with Optimistic UI Update (Zero Latency)
         function changeDeductedStatus(id, selectEl) {
             const month = document.getElementById('monthSelect').value;
-            if (isMonthInPast(month)) {
-                alert('🔒 歷史月份已封存鎖定，無法修改扣補休狀態！');
-                loadLeaves();
-                return;
-            }
+            const isPast = isMonthInPast(month);
             ensureAdminUnlocked(async () => {
+                if (isPast) {
+                    if (!confirm('⚠️ 此紀錄屬於歷史月份，確定要修改扣補休狀態嗎？')) {
+                        await loadLeaves();
+                        return;
+                    }
+                }
                 const val = parseInt(selectEl.value);
                 // Optimistic visual feedback immediately
                 if (val === 1) {
@@ -3175,12 +3324,12 @@
         // Delete Leave
         function deleteLeave(id) {
             const month = document.getElementById('monthSelect').value;
-            if (isMonthInPast(month)) {
-                alert('🔒 歷史月份已封存鎖定，無法刪除紀錄！');
-                return;
-            }
+            const isPast = isMonthInPast(month);
             ensureAdminUnlocked(async () => {
-                if (!confirm('確定要刪除此筆請假紀錄嗎？')) return;
+                const confirmMsg = isPast 
+                    ? '⚠️ 此紀錄屬於歷史月份，確定要刪除此筆歷史請假紀錄嗎？'
+                    : '確定要刪除此筆請假紀錄嗎？';
+                if (!confirm(confirmMsg)) return;
                 const res = await fetch(`/api/leaves/${id}`, { method: 'DELETE', headers: getAuthHeaders() });
                 if (res.ok) {
                     showToast('已成功刪除請假紀錄');
@@ -3368,15 +3517,29 @@
             const lvRecords = currentParsedData.leave_records || [];
             document.getElementById('parsedLvCount').textContent = lvRecords.length;
             
+            const previewCheckCounts = {};
             lvRecords.forEach((r, idx) => {
                 const tr = document.createElement('tr');
-                const badgeClass = getLeaveBadgeClass(r.leave_type);
+                let leaveBadgeHtml = `<span class="badge ${getLeaveBadgeClass(r.leave_type)}">${r.leave_type}</span>`;
+                if (r.leave_type === '出勤確認') {
+                    const n = (r.name || '').trim();
+                    const existingCount = cachedMonthCheckCountsByName[n] || 0;
+                    previewCheckCounts[n] = (previewCheckCounts[n] || existingCount) + 1;
+                    const seq = previewCheckCounts[n];
+                    if (seq > 4) {
+                        leaveBadgeHtml = `<span class="badge badge-leave-check-exceeded" title="⚠️ 超過每月份 4 次上限！本月已累計第 ${seq} 次"><i class="fa-solid fa-triangle-exclamation"></i> 出勤確認 (第${seq}次 · 超額)</span>`;
+                    } else if (seq === 4) {
+                        leaveBadgeHtml = `<span class="badge badge-leave-check-full" title="本月第 4 次出勤確認 (額度已滿)"><i class="fa-solid fa-bell"></i> 出勤確認 (4/4 · 滿)</span>`;
+                    } else {
+                        leaveBadgeHtml = `<span class="badge badge-leave-check" title="本月第 ${seq} 次出勤確認 (剩餘 ${4 - seq} 次額度)">出勤確認 (${seq}/4)</span>`;
+                    }
+                }
                 const weekendCheck = checkTaiwanLeaveWeekend(r.name, r.date, r.leave_type);
                 const warnBadge = weekendCheck.invalid ? `<span class="badge" style="background:rgba(239,68,68,0.2);color:#fca5a5;border:1px solid rgba(239,68,68,0.4);margin-left:0.4rem;" title="${weekendCheck.msg}"><i class="fa-solid fa-triangle-exclamation"></i> 台灣週末無上班</span>` : '';
                 tr.innerHTML = `
                     <td>${r.date} ${getChineseWeekday(r.date)} ${warnBadge}</td>
                     <td><strong>${r.name}</strong></td>
-                    <td><span class="badge ${badgeClass}">${r.leave_type}</span></td>
+                    <td>${leaveBadgeHtml}</td>
                     <td>${r.duration}</td>
                     <td>${r.reason}</td>
                     <td>
@@ -3471,10 +3634,6 @@
         // Show Add Overtime Modal
         function showAddOtModal() {
             const ym = document.getElementById('monthSelect').value;
-            if (isMonthInPast(ym)) {
-                alert(`🔒 月份 [${ym}] 為歷史月份，已封存為唯讀狀態，無法新增加班紀錄！\n如需新增紀錄，請切換至當前或未來月份。`);
-                return;
-            }
             ensureAdminUnlocked(() => {
                 const today = new Date();
                 const defaultDate = `${ym}/01`;
@@ -3559,6 +3718,29 @@
                 }
             }
 
+            if (leaveType === '出勤確認') {
+                const count = cachedMonthCheckCountsByName[name] || 0;
+                badgeContainer.style.display = 'flex';
+                const textEl = document.getElementById('modalCompBadgeText');
+                if (count >= 4) {
+                    badgeContainer.style.background = 'rgba(239, 68, 68, 0.2)';
+                    badgeContainer.style.borderColor = 'rgba(239, 68, 68, 0.6)';
+                    badgeContainer.style.color = '#fca5a5';
+                    textEl.innerHTML = `⚠️ <strong>${name}</strong> 本月已申請 <strong>${count}</strong> 次出勤確認，<strong>已達/超過每月 4 次上限！</strong> (本次將標記為超額)`;
+                } else if (count === 3) {
+                    badgeContainer.style.background = 'rgba(245, 158, 11, 0.2)';
+                    badgeContainer.style.borderColor = 'rgba(245, 158, 11, 0.5)';
+                    badgeContainer.style.color = '#fcd34d';
+                    textEl.innerHTML = `🔔 <strong>${name}</strong> 本月已申請 <strong>3/4</strong> 次出勤確認 (本次為第 4 次，額度即將用滿)`;
+                } else {
+                    badgeContainer.style.background = 'rgba(14, 165, 233, 0.15)';
+                    badgeContainer.style.borderColor = 'rgba(14, 165, 233, 0.4)';
+                    badgeContainer.style.color = '#38bdf8';
+                    textEl.innerHTML = `📍 <strong>${name}</strong> 本月已申請 <strong>${count}/4</strong> 次出勤確認 (剩餘 <strong>${4 - count}</strong> 次額度)`;
+                }
+                return;
+            }
+
             const mData = memberQuotaMap[name] || memberQuotaMap[Object.keys(memberQuotaMap).find(k => k.toLowerCase() === name.toLowerCase())];
             const quota = mData ? mData.quota : 0;
             const used = mData ? mData.used : 0;
@@ -3585,10 +3767,6 @@
         // Show Add Leave Modal
         function showAddLeaveModal() {
             const ym = document.getElementById('monthSelect').value;
-            if (isMonthInPast(ym)) {
-                alert(`🔒 月份 [${ym}] 為歷史月份，已封存為唯讀狀態，無法新增請假紀錄！\n如需新增紀錄，請切換至當前或未來月份。`);
-                return;
-            }
             ensureAdminUnlocked(async () => {
                 await refreshMemberLocationMap();
                 const today = new Date();
@@ -3643,19 +3821,9 @@
 
         // Open OT Edit Modal for saved DB records
         function openOtEditModal(recId) {
-            const month = document.getElementById('monthSelect').value;
-            if (isMonthInPast(month)) {
-                alert('🔒 歷史月份已封存鎖定，無法編輯紀錄！');
-                return;
-            }
             ensureAdminUnlocked(async () => {
                 const res = await fetch(`/api/overtime/${recId}`);
                 const r = await res.json();
-
-                if (isDateInPastMonth(r.date)) {
-                    alert(`🔒 此筆加班紀錄日期 [${r.date}] 屬於已封存之歷史月份，無法編輯！`);
-                    return;
-                }
 
                 editingRecordState = { type: 'edit_ot_db', id: recId };
                 document.getElementById('modalTitleText').innerHTML = `<i class="fa-solid fa-pen-to-square" style="color: var(--primary);"></i> 編輯加班紀錄`;
@@ -3684,20 +3852,10 @@
 
         // Open Leave Edit Modal for saved DB records
         function openLeaveEditModal(recId) {
-            const month = document.getElementById('monthSelect').value;
-            if (isMonthInPast(month)) {
-                alert('🔒 歷史月份已封存鎖定，無法編輯紀錄！');
-                return;
-            }
             ensureAdminUnlocked(async () => {
                 await refreshMemberLocationMap();
                 const res = await fetch(`/api/leaves/${recId}`);
                 const r = await res.json();
-
-                if (isDateInPastMonth(r.date)) {
-                    alert(`🔒 此筆請假紀錄日期 [${r.date}] 屬於已封存之歷史月份，無法編輯！`);
-                    return;
-                }
 
                 editingRecordState = { type: 'edit_leave_db', id: recId };
                 document.getElementById('modalTitleText').innerHTML = `<i class="fa-solid fa-pen-to-square" style="color: var(--primary);"></i> 編輯請假紀錄`;
@@ -3746,8 +3904,11 @@
             }
 
             if (isDateInPastMonth(date)) {
-                alert(`🔒 日期 [${date}] 屬於已封存之歷史月份，無法建立或修改此月份紀錄！`);
-                return;
+                const actionText = (type.startsWith('add') ? '新增' : '修改');
+                const confirmMsg = `⚠️ 日期 [${date}] 屬於歷史月份，確定要${actionText}此筆歷史紀錄嗎？`;
+                if (!confirm(confirmMsg)) {
+                    return;
+                }
             }
 
             if (type === 'edit_leave_db' || type === 'add_leave' || type === 'leave') {

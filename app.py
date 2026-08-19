@@ -19,7 +19,7 @@ def is_date_in_past_month(date_str):
         return False
     try:
         parts = date_str.strip().replace('-', '/').split('/')
-        if len(parts) >= 2:
+        if len(parts) >= 2 and len(parts[0]) == 4:
             y, m = int(parts[0]), int(parts[1])
             now = datetime.now()
             if y < now.year:
@@ -264,9 +264,6 @@ def add_overtime():
         return jsonify({"status": "error", "message": "需要管理員權限才能執行此操作！"}), 403
     data = request.json or {}
     date = data.get('date')
-    if is_date_in_past_month(date):
-        return jsonify({"status": "error", "message": "歷史月份已封存鎖定，無法新增加班紀錄！"}), 400
-
     name = data.get('name')
     time_str = data.get('time', '')
     hours = float(data.get('hours', 0.0))
@@ -291,20 +288,9 @@ def get_overtime_by_id(rec_id):
 def update_overtime(rec_id):
     if not is_admin_authorized():
         return jsonify({"status": "error", "message": "需要管理員權限才能執行此操作！"}), 403
-    
-    # Check original record date
-    with database.get_connection() as conn:
-        cursor = conn.cursor()
-        cursor.execute('SELECT date FROM overtime_records WHERE id=?', (rec_id,))
-        row = cursor.fetchone()
-    if row and is_date_in_past_month(row['date']):
-        return jsonify({"status": "error", "message": "歷史月份已封存鎖定，無法修改紀錄！"}), 400
 
     data = request.json or {}
     date = data.get('date')
-    if is_date_in_past_month(date):
-        return jsonify({"status": "error", "message": "無法將日期修改為歷史月份！"}), 400
-
     name = data.get('name')
     time_str = data.get('time', '')
     hours = float(data.get('hours', 0.0))
@@ -322,13 +308,6 @@ def update_overtime(rec_id):
 def delete_overtime(rec_id):
     if not is_admin_authorized():
         return jsonify({"status": "error", "message": "需要管理員權限才能執行此操作！"}), 403
-
-    with database.get_connection() as conn:
-        cursor = conn.cursor()
-        cursor.execute('SELECT date FROM overtime_records WHERE id=?', (rec_id,))
-        row = cursor.fetchone()
-    if row and is_date_in_past_month(row['date']):
-        return jsonify({"status": "error", "message": "歷史月份已封存鎖定，無法刪除紀錄！"}), 400
 
     database.delete_overtime_record(rec_id)
     return jsonify({"status": "success"})
@@ -362,9 +341,6 @@ def add_leave():
         return jsonify({"status": "error", "message": "需要管理員權限才能執行此操作！"}), 403
     data = request.json or {}
     date = data.get('date')
-    if is_date_in_past_month(date):
-        return jsonify({"status": "error", "message": "歷史月份已封存鎖定，無法新增請假紀錄！"}), 400
-
     name = data.get('name')
     leave_type = data.get('leave_type')
     duration = data.get('duration', '1天')
@@ -383,19 +359,9 @@ def add_leave():
 def update_leave(rec_id):
     if not is_admin_authorized():
         return jsonify({"status": "error", "message": "需要管理員權限才能執行此操作！"}), 403
-    
-    with database.get_connection() as conn:
-        cursor = conn.cursor()
-        cursor.execute('SELECT date FROM leave_records WHERE id=?', (rec_id,))
-        row = cursor.fetchone()
-    if row and is_date_in_past_month(row['date']):
-        return jsonify({"status": "error", "message": "歷史月份已封存鎖定，無法修改紀錄！"}), 400
 
     data = request.json or {}
     date = data.get('date')
-    if is_date_in_past_month(date):
-        return jsonify({"status": "error", "message": "無法將日期修改為歷史月份！"}), 400
-
     name = data.get('name')
     leave_type = data.get('leave_type')
     duration = data.get('duration', '1天')
@@ -415,13 +381,6 @@ def update_leave_deducted_status(rec_id):
     if not is_admin_authorized():
         return jsonify({"status": "error", "message": "需要管理員權限才能執行此操作！"}), 403
 
-    with database.get_connection() as conn:
-        cursor = conn.cursor()
-        cursor.execute('SELECT date FROM leave_records WHERE id=?', (rec_id,))
-        row = cursor.fetchone()
-    if row and is_date_in_past_month(row['date']):
-        return jsonify({"status": "error", "message": "歷史月份已封存鎖定，無法修改扣補休狀態！"}), 400
-
     data = request.json or {}
     is_comp_deducted = int(data.get('is_comp_deducted', 1))
     database.update_leave_deducted_status(rec_id, is_comp_deducted)
@@ -431,13 +390,6 @@ def update_leave_deducted_status(rec_id):
 def delete_leave(rec_id):
     if not is_admin_authorized():
         return jsonify({"status": "error", "message": "需要管理員權限才能執行此操作！"}), 403
-
-    with database.get_connection() as conn:
-        cursor = conn.cursor()
-        cursor.execute('SELECT date FROM leave_records WHERE id=?', (rec_id,))
-        row = cursor.fetchone()
-    if row and is_date_in_past_month(row['date']):
-        return jsonify({"status": "error", "message": "歷史月份已封存鎖定，無法刪除紀錄！"}), 400
 
     database.delete_leave_record(rec_id)
     return jsonify({"status": "success"})

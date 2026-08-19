@@ -227,6 +227,24 @@ class TestDatabase(unittest.TestCase):
         is_invalid_fri, _ = database.check_taiwan_leave_weekend("台灣同仁", "2026/03/13", "特休")
         self.assertFalse(is_invalid_fri)
 
+    def test_attendance_check_quota_and_exceeded(self):
+        """測試每人每月 4 次出勤確認容錯額度與超額判定"""
+        database.add_member("刷卡員", "台灣辦公室", 0.0)
+        for i in range(1, 6):
+            database.add_leave_record(f"2026/03/0{i}", "刷卡員", "出勤確認", "出勤確認", 0.0, f"忘刷第{i}次")
+
+        stats = database.get_monthly_stats(month="2026/03")
+        stats_list = stats.get('stats', [])
+        user_stat = next((s for s in stats_list if s['name'] == "刷卡員"), None)
+        self.assertIsNotNone(user_stat)
+        self.assertEqual(user_stat['attendance_check_count'], 5)
+        self.assertTrue(user_stat['attendance_check_exceeded'])
+
+        chk_breakdown = next((b for b in user_stat['leave_breakdown'] if b['type'] == '出勤確認'), None)
+        self.assertIsNotNone(chk_breakdown)
+        self.assertTrue(chk_breakdown['exceeded'])
+        self.assertIn("超額1次", chk_breakdown['label'])
+
 
 class TestFlaskAPI(unittest.TestCase):
     """測試 Flask Web 路由與管理員認證機制"""
@@ -309,6 +327,33 @@ class TestFlaskAPI(unittest.TestCase):
         data = res.get_json()
         self.assertIn('stats', data)
         self.assertIn('weekly_summary', data)
+
+    def test_historical_month_crud_authorized(self):
+        """測試管理員授權下，歷史月份資料仍可正常進行 CRUD 維護"""
+        # 歷史月份加班新增
+        res_add = self.client.post('/api/overtime', json={
+            'date': '2025/12/15',
+            'name': '測試員',
+            'time': '20:00-22:00',
+            'hours': 2.0,
+            'reason': '歷史加班'
+        }, headers=self.admin_headers)
+        self.assertEqual(res_add.status_code, 200)
+        rec_id = res_add.get_json().get('id')
+
+        # 歷史月份加班修改
+        res_upd = self.client.put(f'/api/overtime/{rec_id}', json={
+            'date': '2025/12/15',
+            'name': '測試員',
+            'time': '20:00-23:00',
+            'hours': 3.0,
+            'reason': '歷史加班修正'
+        }, headers=self.admin_headers)
+        self.assertEqual(res_upd.status_code, 200)
+
+        # 歷史月份加班刪除
+        res_del = self.client.delete(f'/api/overtime/{rec_id}', headers=self.admin_headers)
+        self.assertEqual(res_del.status_code, 200)
 
 
 if __name__ == '__main__':

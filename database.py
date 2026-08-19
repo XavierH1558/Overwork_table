@@ -1174,13 +1174,21 @@ def get_monthly_stats(month=None, start_date=None, end_date=None):
 
         leave_breakdown = []
         for lt, ddata in leave_summary.items():
-            if lt in ['因公外出', '出勤確認']:
+            if lt == '出勤確認':
+                c_cnt = ddata['count']
+                if c_cnt > 4:
+                    label = f"出勤確認 {c_cnt}次 (超額{c_cnt - 4}次)"
+                else:
+                    label = f"出勤確認 {c_cnt}/4次"
+                leave_breakdown.append({"type": lt, "label": label, "count": c_cnt, "exceeded": (c_cnt > 4)})
+            elif lt == '因公外出':
                 label = f"{lt} {ddata['count']}次"
+                leave_breakdown.append({"type": lt, "label": label, "count": ddata['count']})
             else:
                 d_val = ddata['days']
                 d_str = f"{int(d_val)}天" if d_val.is_integer() else f"{d_val}天"
                 label = f"{lt} {d_str}"
-            leave_breakdown.append({"type": lt, "label": label})
+                leave_breakdown.append({"type": lt, "label": label, "days": d_val})
 
         # Comp quota calculation from batch
         m_quota = member_quota_map.get(n_key, 0.0)
@@ -1211,6 +1219,8 @@ def get_monthly_stats(month=None, start_date=None, end_date=None):
             "location_breakdown": location_breakdown,
             "ot_count": ot_count,
             "leave_count": len(leaves),
+            "attendance_check_count": leave_summary.get('出勤確認', {}).get('count', 0),
+            "attendance_check_exceeded": leave_summary.get('出勤確認', {}).get('count', 0) > 4,
             "weekday_ot_hours": round(weekday_ot_hours, 2),
             "weekend_ot_hours": round(weekend_ot_hours, 2),
             "overtime_hours": round(ot_hours, 2),
