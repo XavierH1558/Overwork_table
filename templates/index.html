@@ -1216,7 +1216,7 @@
                     <div class="card-title">
                         <i class="fa-solid fa-eye"></i> 解析預覽
                     </div>
-                    <button class="btn btn-success" onclick="confirmImport()">
+                    <button class="btn btn-success" id="confirmImportBtn" onclick="confirmImport()">
                         <i class="fa-solid fa-check"></i> 確認匯入資料庫
                     </button>
                 </div>
@@ -4054,6 +4054,56 @@
             }
         }
 
+        // Loading overlay helpers
+        function showImportLoading(msg) {
+            let overlay = document.getElementById('importLoadingOverlay');
+            if (!overlay) {
+                overlay = document.createElement('div');
+                overlay.id = 'importLoadingOverlay';
+                overlay.style.cssText = [
+                    'position:fixed', 'inset:0', 'z-index:9999',
+                    'background:rgba(10,10,20,0.72)',
+                    'backdrop-filter:blur(6px)',
+                    '-webkit-backdrop-filter:blur(6px)',
+                    'display:flex', 'flex-direction:column',
+                    'align-items:center', 'justify-content:center',
+                    'gap:1.2rem',
+                    'transition:opacity 0.25s'
+                ].join(';');
+                overlay.innerHTML = `
+                    <div style="width:60px;height:60px;border-radius:50%;
+                        border:4px solid rgba(99,102,241,0.25);
+                        border-top-color:#818cf8;
+                        animation:importSpin 0.8s linear infinite;"></div>
+                    <div id="importLoadingMsg"
+                        style="color:#e0e7ff;font-size:1.1rem;font-weight:600;
+                        letter-spacing:0.02em;text-shadow:0 2px 12px #6366f1aa;">
+                        ${msg || '正在匯入資料庫…'}
+                    </div>`;
+                // inject keyframes once
+                if (!document.getElementById('importSpinStyle')) {
+                    const st = document.createElement('style');
+                    st.id = 'importSpinStyle';
+                    st.textContent = '@keyframes importSpin{to{transform:rotate(360deg)}}';
+                    document.head.appendChild(st);
+                }
+                document.body.appendChild(overlay);
+            } else {
+                overlay.style.opacity = '1';
+                overlay.style.display = 'flex';
+                const msgEl = document.getElementById('importLoadingMsg');
+                if (msgEl) msgEl.textContent = msg || '正在匯入資料庫…';
+            }
+        }
+
+        function hideImportLoading() {
+            const overlay = document.getElementById('importLoadingOverlay');
+            if (overlay) {
+                overlay.style.opacity = '0';
+                setTimeout(() => { overlay.style.display = 'none'; }, 260);
+            }
+        }
+
         // Confirm Import
         function confirmImport() {
             ensureAdminUnlocked(async () => {
@@ -4073,6 +4123,15 @@
                     if (!proceed) return;
                 }
 
+                // --- UI: show loading state ---
+                const importBtn = document.getElementById('confirmImportBtn');
+                const originalBtnHtml = importBtn ? importBtn.innerHTML : '';
+                if (importBtn) {
+                    importBtn.disabled = true;
+                    importBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> 匯入中…';
+                }
+                showImportLoading('正在寫入資料庫，請稍候…');
+
                 try {
                     const res = await fetch('/api/confirm_import', {
                         method: 'POST',
@@ -4081,14 +4140,23 @@
                     });
                     if (!res.ok) {
                         const err = await res.json();
+                        hideImportLoading();
+                        if (importBtn) { importBtn.disabled = false; importBtn.innerHTML = originalBtnHtml; }
                         alert(err.message || ('匯入失敗 (HTTP ' + res.status + ')'));
                         return;
                     }
                     const result = await res.json();
+
+                    // 稍微停留讓使用者看到成功再淡出
+                    const msgEl = document.getElementById('importLoadingMsg');
+                    if (msgEl) msgEl.textContent = '✅ 匯入成功！';
+                    await new Promise(r => setTimeout(r, 700));
+                    hideImportLoading();
+
                     showToast(result.message || '資料匯入成功！');
                     document.getElementById('parsePreviewArea').style.display = 'none';
                     document.getElementById('rawParseInput').value = '';
-                    
+
                     // Check sample date from imported records to auto switch month dropdown if available
                     const sampleRec = (currentParsedData.overtime_records || [])[0] || (currentParsedData.leave_records || [])[0];
                     if (sampleRec && sampleRec.date) {
@@ -4108,6 +4176,8 @@
                     switchTab('dashboard');
                 } catch (e) {
                     console.error('confirmImport error:', e);
+                    hideImportLoading();
+                    if (importBtn) { importBtn.disabled = false; importBtn.innerHTML = originalBtnHtml; }
                     alert('匯入發生錯誤：' + e);
                 }
             });
